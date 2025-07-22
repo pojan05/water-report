@@ -1,1 +1,49 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>รายงานสถานการณ์น้ำอินทร์บุรี</title>
+    <meta http-equiv="refresh" content="1800">
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            flex-direction: column; 
+            background-color: #f0f2f5; 
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        img { 
+            max-width: 100%; 
+            height: auto; 
+            border-radius: 12px; 
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1); 
+        }
+        h1 { color: #1c1e21; }
+        p { color: #606770; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>รายงานสถานการณ์น้ำล่าสุด</h1>
+        <img id="report-image" src="final_report.jpg" alt="กำลังโหลดรายงานสถานการณ์น้ำ...">
+        <p>หน้านี้จะอัปเดตข้อมูลอัตโนมัติทุกชั่วโมง</p>
+    </div>
 
+    <script>
+        // ทำให้รูปภาพรีเฟรชตัวเองโดยไม่ต้องโหลดทั้งหน้าใหม่
+        const image = document.getElementById('report-image');
+        const originalSrc = image.src;
+        setInterval(() => {
+            image.src = originalSrc.split('?')[0] + '?' + new Date().getTime();
+        }, 60000); // รีเฟรชรูปทุก 1 นาที
+    </script>
+</body>
+</html>
