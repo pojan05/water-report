@@ -1,14 +1,16 @@
-name: Generate Water Report
+name: Generate and Post Water Report
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # เวลาไทย 09:00 น.
+    - cron: '0 2 * * *'  # ทุกวัน 09:00 เวลาไทย
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+      FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
       OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
 
     steps:
@@ -22,5 +24,8 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Run script to generate image
+    - name: Generate image
       run: python main.py
+
+    - name: Post to Facebook
+      run: python post_to_facebook.py
