@@ -14,51 +14,60 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime, timedelta
 
-# --- 1. ส่วนของการดึงข้อมูล (นำมาจากโค้ดของคุณ) ---
+# --- 1. ส่วนของการดึงข้อมูล (อัปเกรดเป็น Selenium ทั้งหมด) ---
+
+def initialize_driver():
+    """ตั้งค่าและสร้าง Driver ของ Chrome สำหรับ Selenium"""
+    opts = Options()
+    opts.add_argument("--headless")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=opts
+    )
+    return driver
 
 def get_chao_phraya_dam_data():
     """
-    ดึงข้อมูลเขื่อนเจ้าพระยาจาก JSON ในหน้าเว็บ (จาก scraper.py)
+    ดึงข้อมูลเขื่อนเจ้าพระยาด้วย Selenium (วิธีใหม่ที่เสถียร)
     """
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
+    driver = initialize_driver()
     try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-        response.encoding = 'utf-8'
-        
-        match = re.search(r'var json_data = (\[.*\]);', response.text)
-        if not match:
-            print("Error: ไม่พบ json_data ในหน้าเว็บเขื่อนเจ้าพระยา")
-            return "N/A"
-            
-        json_string = match.group(1)
-        data = json.loads(json_string)
-        
-        # ค้นหาข้อมูลปล่อยน้ำของสถานี C.2 (ท้ายเขื่อนเจ้าพระยา)
-        flow = data[0].get('itc_water', {}).get('C2', {}).get('q')
-        return str(int(float(flow))) if flow else "N/A"
+        driver.get(url)
+        # รอให้ตารางข้อมูลโหลดเสร็จ
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
+        )
+        html = driver.page_source
+        driver.quit()
+
+        soup = BeautifulSoup(html, "html.parser")
+        cells = soup.find_all('td')
+        for i, cell in enumerate(cells):
+            if "ท้ายเขื่อนเจ้าพระยา" in cell.text:
+                value = cells[i + 1].text.strip().split('/')[0].strip()
+                return str(int(float(value))) if value else "N/A"
 
     except Exception as e:
         print(f"เกิดข้อผิดพลาดในการดึงข้อมูลเขื่อนเจ้าพระยา: {e}")
+        if driver:
+            driver.quit()
         return "N/A"
+    return "N/A"
+
 
 def get_inburi_bridge_data():
     """
-    ดึงข้อมูลสะพานอินทร์บุรีด้วย Selenium (จาก inburi_bridge_alert.py)
+    ดึงข้อมูลสะพานอินทร์บุรีด้วย Selenium (จากโค้ดของคุณ)
     """
     url = "https://singburi.thaiwater.net/wl"
+    driver = initialize_driver()
     try:
-        opts = Options()
-        opts.add_argument("--headless")
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=opts
-        )
         driver.get(url)
-        
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
         )
@@ -74,12 +83,14 @@ def get_inburi_bridge_data():
                 return water_level
     except Exception as e:
         print(f"เกิดข้อผิดพลาดในการดึงข้อมูลสะพานอินทร์บุรี: {e}")
+        if driver:
+            driver.quit()
         return "N/A"
     
     print("Error: ไม่พบข้อมูลสถานีอินทร์บุรี")
     return "N/A"
 
-# --- 2. ส่วนของการสร้างภาพ (จากโค้ดของผม) ---
+# --- 2. ส่วนของการสร้างภาพ (ไม่ต้องแก้ไข) ---
 
 def create_report_image(dam_discharge, water_level):
     """สร้างภาพรายงานสรุปสถานการณ์น้ำ"""
