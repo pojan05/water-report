@@ -33,11 +33,13 @@ def get_dam_data():
 
 def get_inburi_water_level():
     """ดึงข้อมูลระดับน้ำที่อินทร์บุรี (C.35) โดยใช้ Selenium"""
+    driver = None # กำหนดค่าเริ่มต้นให้ driver
     try:
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
-        chrome_-options.add_argument("--disable-dev-shm-usage")
+        # --- บรรทัดนี้คือจุดที่แก้ไข ---
+        chrome_options.add_argument("--disable-dev-shm-usage")
         
         driver = webdriver.Chrome(options=chrome_options)
         driver.get("https://singburi.thaiwater.net/wl")
@@ -56,7 +58,8 @@ def get_inburi_water_level():
                 return water_level
     except Exception as e:
         print(f"Error getting In Buri water level: {e}")
-        driver.quit()
+        if driver:
+            driver.quit()
         return "N/A"
     return "N/A"
 
@@ -67,11 +70,24 @@ def create_report_image(dam_discharge, water_level):
     # ค่าสมมติสำหรับกราฟ 7 วัน (ในโปรเจกต์จริงควรดึงข้อมูลจริงมาเก็บ)
     today = datetime.now()
     dates = [(today - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
-    mock_levels = [8.1, 7.8, 7.5, 7.9, 8.2, 8.0, float(water_level) if water_level != "N/A" else 8.0]
+    
+    # แปลงระดับน้ำเป็น float ถ้าทำได้, ถ้าไม่ได้ใช้ค่า default
+    try:
+        current_level_float = float(water_level)
+    except (ValueError, TypeError):
+        current_level_float = 8.0 # ค่า default หากข้อมูลผิดพลาด
+
+    mock_levels = [8.1, 7.8, 7.5, 7.9, 8.2, 8.0, current_level_float]
 
     # ตรวจสอบว่าไฟล์ที่จำเป็นอยู่ครบหรือไม่
     if not os.path.exists("background.png") or not os.path.exists("Sarabun-Regular.ttf"):
         print("ไม่พบไฟล์ background.png หรือ Sarabun-Regular.ttf")
+        # สร้างภาพเปล่าๆ พร้อมข้อความ error เพื่อให้รู้ว่าเกิดอะไรขึ้น
+        img = Image.new('RGB', (800, 600), color = 'white')
+        d = ImageDraw.Draw(img)
+        error_font = ImageFont.truetype("Sarabun-Regular.ttf", 20)
+        d.text((10,10), "Error: ไม่พบไฟล์ background.png หรือ Sarabun-Regular.ttf", fill='red', font=error_font)
+        img.save('final_report.jpg')
         return
 
     # สร้างกราฟด้วย Matplotlib
