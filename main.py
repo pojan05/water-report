@@ -1,5 +1,5 @@
-
 import os
+import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -9,9 +9,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image, ImageDraw, ImageFont
-import requests
 
 def initialize_driver():
+    """Initializes a Chrome WebDriver for Selenium."""
     opts = Options()
     opts.add_argument("--headless")
     opts.add_argument("--no-sandbox")
@@ -21,6 +21,7 @@ def initialize_driver():
     return driver
 
 def get_chao_phraya_dam_data():
+    """Fetches Chao Phraya Dam data using Selenium."""
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
@@ -30,6 +31,7 @@ def get_chao_phraya_dam_data():
         )
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
+        
         strong_tag = soup.find('strong', string=lambda text: text and 'ที่ท้ายเขื่อนเจ้าพระยา' in text)
         if strong_tag:
             table = strong_tag.find_parent('table')
@@ -42,6 +44,9 @@ def get_chao_phraya_dam_data():
                         float(value_text)
                         driver.quit()
                         return str(int(float(value_text)))
+
+    except (ValueError, IndexError, AttributeError) as e:
+        print(f"Error parsing dam data: {e}")
     except Exception as e:
         print(f"Error fetching dam data: {e}")
     finally:
@@ -50,6 +55,7 @@ def get_chao_phraya_dam_data():
     return "N/A"
 
 def get_inburi_bridge_data():
+    """Fetches In Buri Bridge data using Selenium."""
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
@@ -73,11 +79,17 @@ def get_inburi_bridge_data():
     return "N/A"
 
 def get_weather_status():
+    """Fetches real-time weather data from OpenWeatherMap."""
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    lat, lon = "14.9", "100.4"
+    if not api_key:
+        print("Warning: OPENWEATHER_API_KEY is not set. Weather data will be unavailable.")
+        return "ข้อมูลสภาพอากาศไม่พร้อม"
+        
+    lat, lon = "14.9", "100.4"  # Coordinates for In Buri
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
         response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
         data = response.json()
         description = data["weather"][0]["description"]
         if "ฝน" in description:
@@ -87,11 +99,14 @@ def get_weather_status():
         else:
             emoji = "☀️"
         return f"{description.capitalize()} {emoji}"
-    except Exception as e:
-        print(f"Error fetching weather: {e}")
-        return "ข้อมูลสภาพอากาศไม่พร้อม"
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching weather data: {e}")
+    except (KeyError, IndexError) as e:
+        print(f"Error parsing weather data: {e}")
+    return "ข้อมูลสภาพอากาศไม่พร้อม"
 
 def create_report_image(dam_discharge, water_level, weather_status):
+    """Creates the final report image with dynamic data."""
     if not os.path.exists("background.png"):
         print("background.png not found.")
         return
@@ -114,11 +129,11 @@ def create_report_image(dam_discharge, water_level, weather_status):
     box_top, box_bottom = 165, 400
     box_width = box_right - box_left
     box_height = box_bottom - box_top
-
+    
     line_spacing = 15
     text_heights = [draw.textbbox((0, 0), line, font=font)[3] for line in lines]
     total_text_height = sum(text_heights) + line_spacing * (len(lines) - 1)
-
+    
     y_start = box_top + (box_height - total_text_height) / 2
 
     for i, line in enumerate(lines):
@@ -135,5 +150,11 @@ if __name__ == "__main__":
     dam_value = get_chao_phraya_dam_data()
     level_value = get_inburi_bridge_data()
     weather_status = get_weather_status()
+    
     print(f"📊 Water Level: {level_value} | Dam Discharge: {dam_value} | Weather: {weather_status}")
-    create_report_image(dam_discharge=dam_value, water_level=level_value, weather_status=weather_status)
+    
+    create_report_image(
+        dam_discharge=dam_value, 
+        water_level=level_value, 
+        weather_status=weather_status
+    )
