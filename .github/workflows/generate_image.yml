@@ -2,16 +2,15 @@ name: Generate Water Report Image
 
 on:
   schedule:
-    # ทำงานทุกๆ ชั่วโมง (ณ นาทีที่ 45 ของทุกชั่วโมง)
-    - cron: '45 * * * *'
-  workflow_dispatch:
+    - cron: '45 * * * *'  # Run every hour at minute 45
+  workflow_dispatch:      # Allow manual trigger from GitHub UI
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,7 +18,7 @@ jobs:
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: 3.10
 
       - name: Install Google Chrome
         run: |
