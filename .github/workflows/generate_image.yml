@@ -14,6 +14,10 @@ jobs:
       OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
 
     steps:
+      - name: Send final image to Make Webhook
+        run: |
+          curl -X POST -F "file=@final_report.jpg" https://hook.eu2.make.com/bux1lm098yc1e1hij8u7nbly92eag22o
+
     - uses: actions/checkout@v4
 
     - name: Set up Python
