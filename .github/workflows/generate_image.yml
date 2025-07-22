@@ -2,8 +2,8 @@ name: Generate Water Report Image
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # ทุก 4 ชั่วโมง
-  workflow_dispatch:       # รันด้วยมือได้ด้วย
+    - cron: '0 */4 * * *'  # รันทุก 4 ชั่วโมง
+  workflow_dispatch:       # กด run ด้วยมือได้
 
 jobs:
   build:
@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 🔧 สำคัญ เพื่อให้สามารถ push ได้
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
@@ -34,7 +36,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git pull origin main  # หรือ gh-pages ถ้าคุณใช้ branch นั้น
+          git pull origin main  # ✅ เปลี่ยนเป็น gh-pages ถ้าใช้ branch นั้น
           git add final_report.jpg
           git commit -m "🔁 Auto-update final_report.jpg" || echo "No changes to commit"
-          git push origin main  # เปลี่ยนเป็น gh-pages ถ้าใช้ branch นั้น
+          git push origin main  # ✅ เปลี่ยนเป็น gh-pages ถ้าใช้ branch นั้น
