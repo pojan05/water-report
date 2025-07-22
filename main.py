@@ -4,14 +4,18 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image, ImageDraw, ImageFont
+from dotenv import load_dotenv
+
+# โหลด .env สำหรับ OPENWEATHER_API_KEY
+load_dotenv()
 
 def initialize_driver():
-    """Initializes a headless Chrome WebDriver."""
     opts = Options()
     opts.add_argument("--headless")
     opts.add_argument("--no-sandbox")
@@ -20,13 +24,12 @@ def initialize_driver():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
 def get_chao_phraya_dam_data():
-    """Fetches and parses the dam discharge data from the Chao Phraya Dam."""
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
+        driver.set_page_load_timeout(30)
         driver.get(url)
-        # Wait for an element that contains the target text to be present
-        WebDriverWait(driver, 60).until(
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
         )
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -35,24 +38,22 @@ def get_chao_phraya_dam_data():
             table = strong_tag.find_parent('table')
             td = table.find('td', string=lambda t: t and 'ปริมาณน้ำ' in t)
             if td:
-                value_text = td.find_next_sibling('td').text.strip().split('/')[0]
-                print(f"✅ Dam discharge raw value: {value_text}")
-                # Convert to float first, then to int to handle decimal values
-                return str(int(float(value_text)))
+                value = td.find_next_sibling('td').text.strip().split('/')[0]
+                print(f"✅ Dam discharge raw value: {value}")
+                return str(int(float(value)))
     except Exception as e:
-        print(f"❌ Dam error: {e}")
+        print("❌ Dam error:", e)
     finally:
         driver.quit()
     return "ไม่สามารถดึงข้อมูล"
 
 def get_inburi_bridge_data():
-    """Fetches and parses the water level data from the Inburi Bridge."""
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
+        driver.set_page_load_timeout(30)
         driver.get(url)
-        # [cite_start]Increased wait time to 60 seconds to prevent timeouts [cite: 18]
-        WebDriverWait(driver, 60).until(
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
         )
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -62,47 +63,39 @@ def get_inburi_bridge_data():
                 print(f"✅ Water level @Inburi: {value}")
                 return value
         print("❌ 'อินทร์บุรี' not found in table")
+    except TimeoutException:
+        print("❌ Timeout loading Inburi bridge data")
     except Exception as e:
-        print(f"❌ Inburi error: {e}")
+        print("❌ Inburi error:", e)
     finally:
         driver.quit()
     return "ไม่สามารถดึงข้อมูล"
 
 def get_weather_status():
-    """Fetches the current weather status from the OpenWeatherMap API."""
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    # [cite_start]Check if the API key is missing or invalid [cite: 19]
-    if not api_key or api_key == '***':
-        print("❌ OPENWEATHER_API_KEY not found or is invalid in environment")
+    if not api_key:
+        print("❌ OPENWEATHER_API_KEY not found in environment")
         return "ข้อมูลสภาพอากาศไม่พร้อม"
-    
     lat, lon = "14.9", "100.4"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
-        print(f"📡 Fetching weather from: {url}")
-        # Added a timeout to the request and status check
-        res = requests.get(url, timeout=15)
-        res.raise_for_status()  # This will raise an exception for HTTP errors
+        print("📡 Fetching weather from:", url)
+        res = requests.get(url)
         data = res.json()
-        print(f"✅ Weather API response: {data}")
+        print("✅ Weather API response:", data)
         desc = data["weather"][0]["description"]
         emoji = "🌧️" if "ฝน" in desc else "⛅" if "เมฆ" in desc else "☀️"
         return f"{desc.capitalize()} {emoji}"
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Weather fetch error: {e}")
     except Exception as e:
-        print(f"❌ An unexpected error occurred in get_weather_status: {e}")
-        
-    return "ข้อมูลสภาพอากาศไม่พร้อม"
+        print("❌ Weather fetch error:", e)
+        return "ข้อมูลสภาพอากาศไม่พร้อม"
 
 def create_report_image(dam_discharge, water_level, weather_status):
-    """Creates a report image with the collected data."""
-    background_path = "background.png"
-    if not os.path.exists(background_path):
-        print(f"❌ {background_path} not found")
+    if not os.path.exists("background.png"):
+        print("❌ background.png not found")
         return
 
-    image = Image.open(background_path).convert("RGBA")
+    image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
 
     lines = [
@@ -111,26 +104,23 @@ def create_report_image(dam_discharge, water_level, weather_status):
         f"สภาพอากาศ: {weather_status}"
     ]
 
-    # Use a system font if the custom one is not available
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
-    # Coordinates for the text box
-    box_left, box_top, box_right, box_bottom = 60, 125, 710, 370
+    # กรอบข้อความ: x = 60 to 710, y = 125 to 370
+    box_left, box_right = 60, 710
+    box_top, box_bottom = 125, 370
     box_width = box_right - box_left
     box_height = box_bottom - box_top
-    line_spacing = 15
 
-    # Calculate total text height to center it vertically
+    line_spacing = 15
     text_heights = [draw.textbbox((0, 0), l, font=font)[3] for l in lines]
     total_height = sum(text_heights) + line_spacing * (len(lines) - 1)
     y = box_top + (box_height - total_height) / 2
 
-    # Draw each line of text, centered horizontally
     for i, line in enumerate(lines):
         text_w = draw.textbbox((0, 0), line, font=font)[2]
         x = box_left + (box_width - text_w) / 2
-        # Draw text with a white stroke for better readability
         draw.text((x, y), line, font=font, fill="#003f5c", stroke_width=1, stroke_fill="white")
         y += text_heights[i] + line_spacing
 
