@@ -33,12 +33,13 @@ def get_chao_phraya_dam_data():
             td = table.find('td', string=lambda t: t and 'ปริมาณน้ำ' in t)
             if td:
                 value = td.find_next_sibling('td').text.strip().split('/')[0]
+                print(f"✅ Dam discharge raw value: {value}")
                 return str(int(float(value)))
     except Exception as e:
-        print("Dam error:", e)
+        print("❌ Dam error:", e)
     finally:
         driver.quit()
-    return "N/A"
+    return "ไม่สามารถดึงข้อมูล"
 
 def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
@@ -51,25 +52,33 @@ def get_inburi_bridge_data():
         soup = BeautifulSoup(driver.page_source, "html.parser")
         for th in soup.select("th[scope='row']"):
             if "อินทร์บุรี" in th.get_text(strip=True):
-                return th.find_parent("tr").find_all("td")[1].get_text(strip=True)
+                value = th.find_parent("tr").find_all("td")[1].get_text(strip=True)
+                print(f"✅ Water level @Inburi: {value}")
+                return value
+        print("❌ 'อินทร์บุรี' not found in table")
     except Exception as e:
-        print("Inburi error:", e)
+        print("❌ Inburi error:", e)
     finally:
         driver.quit()
-    return "N/A"
+    return "ไม่สามารถดึงข้อมูล"
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
+        print("❌ OPENWEATHER_API_KEY not found in environment")
         return "ข้อมูลสภาพอากาศไม่พร้อม"
     lat, lon = "14.9", "100.4"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
-        data = requests.get(url).json()
+        print("📡 Fetching weather from:", url)
+        res = requests.get(url)
+        data = res.json()
+        print("✅ Weather API response:", data)
         desc = data["weather"][0]["description"]
         emoji = "🌧️" if "ฝน" in desc else "⛅" if "เมฆ" in desc else "☀️"
         return f"{desc.capitalize()} {emoji}"
-    except:
+    except Exception as e:
+        print("❌ Weather fetch error:", e)
         return "ข้อมูลสภาพอากาศไม่พร้อม"
 
 def create_report_image(dam_discharge, water_level, weather_status):
@@ -89,7 +98,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
-    # พื้นที่กรอบสีเหลืองในภาพ: x = 60 to 710, y = 125 to 370
+    # พิกัดกรอบข้อความ: x = 60 to 710, y = 125 to 370
     box_left, box_right = 60, 710
     box_top, box_bottom = 125, 370
     box_width = box_right - box_left
