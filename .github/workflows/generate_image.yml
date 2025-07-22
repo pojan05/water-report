@@ -2,7 +2,8 @@ name: Generate Water Report Image
 
 on:
   schedule:
-    - cron: '45 * * * *'
+    # Run every 4 hours, focused on Thai daytime (8 AM, 12 PM, 4 PM, 8 PM)
+    - cron: '0 1,5,9,13 * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
