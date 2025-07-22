@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image, ImageDraw, ImageFont
 
 def initialize_driver():
+    """Initializes a headless Chrome WebDriver."""
     opts = Options()
     opts.add_argument("--headless")
     opts.add_argument("--no-sandbox")
@@ -19,11 +20,13 @@ def initialize_driver():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
 def get_chao_phraya_dam_data():
+    """Fetches and parses the dam discharge data from the Chao Phraya Dam."""
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
         driver.get(url)
-        WebDriverWait(driver, 30).until(
+        # Wait for an element that contains the target text to be present
+        WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
         )
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -32,21 +35,24 @@ def get_chao_phraya_dam_data():
             table = strong_tag.find_parent('table')
             td = table.find('td', string=lambda t: t and 'ปริมาณน้ำ' in t)
             if td:
-                value = td.find_next_sibling('td').text.strip().split('/')[0]
-                print(f"✅ Dam discharge raw value: {value}")
-                return str(int(float(value)))
+                value_text = td.find_next_sibling('td').text.strip().split('/')[0]
+                print(f"✅ Dam discharge raw value: {value_text}")
+                # Convert to float first, then to int to handle decimal values
+                return str(int(float(value_text)))
     except Exception as e:
-        print("❌ Dam error:", e)
+        print(f"❌ Dam error: {e}")
     finally:
         driver.quit()
     return "ไม่สามารถดึงข้อมูล"
 
 def get_inburi_bridge_data():
+    """Fetches and parses the water level data from the Inburi Bridge."""
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
         driver.get(url)
-        WebDriverWait(driver, 30).until(
+        # [cite_start]Increased wait time to 60 seconds to prevent timeouts [cite: 18]
+        WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
         )
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -57,36 +63,46 @@ def get_inburi_bridge_data():
                 return value
         print("❌ 'อินทร์บุรี' not found in table")
     except Exception as e:
-        print("❌ Inburi error:", e)
+        print(f"❌ Inburi error: {e}")
     finally:
         driver.quit()
     return "ไม่สามารถดึงข้อมูล"
 
 def get_weather_status():
+    """Fetches the current weather status from the OpenWeatherMap API."""
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key:
-        print("❌ OPENWEATHER_API_KEY not found in environment")
+    # [cite_start]Check if the API key is missing or invalid [cite: 19]
+    if not api_key or api_key == '***':
+        print("❌ OPENWEATHER_API_KEY not found or is invalid in environment")
         return "ข้อมูลสภาพอากาศไม่พร้อม"
+    
     lat, lon = "14.9", "100.4"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
-        print("📡 Fetching weather from:", url)
-        res = requests.get(url)
+        print(f"📡 Fetching weather from: {url}")
+        # Added a timeout to the request and status check
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()  # This will raise an exception for HTTP errors
         data = res.json()
-        print("✅ Weather API response:", data)
+        print(f"✅ Weather API response: {data}")
         desc = data["weather"][0]["description"]
         emoji = "🌧️" if "ฝน" in desc else "⛅" if "เมฆ" in desc else "☀️"
         return f"{desc.capitalize()} {emoji}"
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Weather fetch error: {e}")
     except Exception as e:
-        print("❌ Weather fetch error:", e)
-        return "ข้อมูลสภาพอากาศไม่พร้อม"
+        print(f"❌ An unexpected error occurred in get_weather_status: {e}")
+        
+    return "ข้อมูลสภาพอากาศไม่พร้อม"
 
 def create_report_image(dam_discharge, water_level, weather_status):
-    if not os.path.exists("background.png"):
-        print("❌ background.png not found")
+    """Creates a report image with the collected data."""
+    background_path = "background.png"
+    if not os.path.exists(background_path):
+        print(f"❌ {background_path} not found")
         return
 
-    image = Image.open("background.png").convert("RGBA")
+    image = Image.open(background_path).convert("RGBA")
     draw = ImageDraw.Draw(image)
 
     lines = [
@@ -95,23 +111,26 @@ def create_report_image(dam_discharge, water_level, weather_status):
         f"สภาพอากาศ: {weather_status}"
     ]
 
+    # Use a system font if the custom one is not available
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
-    # พิกัดกรอบข้อความ: x = 60 to 710, y = 125 to 370
-    box_left, box_right = 60, 710
-    box_top, box_bottom = 125, 370
+    # Coordinates for the text box
+    box_left, box_top, box_right, box_bottom = 60, 125, 710, 370
     box_width = box_right - box_left
     box_height = box_bottom - box_top
-
     line_spacing = 15
+
+    # Calculate total text height to center it vertically
     text_heights = [draw.textbbox((0, 0), l, font=font)[3] for l in lines]
     total_height = sum(text_heights) + line_spacing * (len(lines) - 1)
     y = box_top + (box_height - total_height) / 2
 
+    # Draw each line of text, centered horizontally
     for i, line in enumerate(lines):
         text_w = draw.textbbox((0, 0), line, font=font)[2]
         x = box_left + (box_width - text_w) / 2
+        # Draw text with a white stroke for better readability
         draw.text((x, y), line, font=font, fill="#003f5c", stroke_width=1, stroke_fill="white")
         y += text_heights[i] + line_spacing
 
