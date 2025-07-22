@@ -1,44 +1,36 @@
-name: Generate Water Report Image
+
+name: Generate Water Report
 
 on:
-  schedule:
-    # Run every 4 hours, focused on Thai daytime (8 AM, 12 PM, 4 PM, 8 PM)
-    - cron: '0 1,5,9,13 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'  # รันทุกวันเวลา 9:00 น. (เวลาไทย)
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-      - name: Install Google Chrome
-        run: |
-          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo apt-get update
-          sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        sudo apt-get update
+        sudo apt-get install -y fonts-thai-tlwg
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Run generator
+      run: python main.py
 
-      - name: Run script to generate image
-        run: python main.py
-
-      - name: Commit and push the generated image
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add final_report.jpg
-          git diff --staged --quiet || git commit -m "Update water report image"
-          git push
+    - name: Upload report image
+      uses: actions/upload-artifact@v3
+      with:
+        name: final_report
+        path: final_report.jpg
