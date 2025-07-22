@@ -20,30 +20,38 @@ def initialize_driver():
     return driver
 
 def get_chao_phraya_dam_data():
-    """Fetches Chao Phraya Dam discharge data using Selenium."""
+    """Fetches Chao Phraya Dam data using Selenium."""
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
+        driver.set_page_load_timeout(60)
         driver.get(url)
         WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ที่ท้ายเขื่อนเจ้าพระยา')]"))
+            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
         )
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        html = driver.page_source
+        soup = BeautifulSoup(html, "html.parser")
+        
+        strong_tag = soup.find('strong', string=lambda text: text and 'ที่ท้ายเขื่อนเจ้าพระยา' in text)
+        if strong_tag:
+            table = strong_tag.find_parent('table')
+            if table:
+                volume_header_cell = table.find('td', string=lambda text: text and 'ปริมาณน้ำ' in text)
+                if volume_header_cell:
+                    value_cell = volume_header_cell.find_next_sibling('td')
+                    if value_cell:
+                        value_text = value_cell.text.strip().split('/')[0].strip()
+                        float(value_text)
+                        driver.quit()
+                        return str(int(float(value_text)))
 
-        for table in soup.find_all("table", class_="text"):
-            strong = table.find("strong", string=lambda t: t and "ที่ท้ายเขื่อนเจ้าพระยา" in t)
-            if strong:
-                for tr in table.find_all("tr"):
-                    td = tr.find("td")
-                    if td and "ปริมาณน้ำ" in td.text:
-                        value_td = tr.find_all("td")[1]
-                        if value_td:
-                            raw_text = value_td.text.strip().split("/")[0].strip()
-                            return str(int(float(raw_text)))
+    except (ValueError, IndexError, AttributeError) as e:
+        print(f"Error parsing dam data: {e}")
     except Exception as e:
-        print(f"❌ Error fetching dam data: {e}")
+        print(f"Error fetching dam data: {e}")
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
     return "N/A"
 
 def get_inburi_bridge_data():
@@ -51,6 +59,8 @@ def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
+        # เพิ่มการตั้งเวลารอโหลดหน้าเว็บโดยเฉพาะ เพื่อจัดการกับเว็บที่ตอบสนองช้า
+        driver.set_page_load_timeout(60) 
         driver.get(url)
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
