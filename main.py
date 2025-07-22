@@ -116,7 +116,9 @@ def create_report_image(dam_discharge, water_level):
         text_w = draw.textbbox((0, 0), line, font=font)[2]
         x = box_left + (box_width - text_w) / 2
         draw.text((x, y_start), line, font=font, fill="#003f5c", stroke_width=1, stroke_fill="white")
-    image.save("final_report.jpg")  # 💾 Save image file
+        y_start += text_heights[i] + line_spacing
+    base_image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
+    print("✅ final_report.jpg created successfully")
         y_start += text_heights[i] + line_spacing
 
     base_image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
