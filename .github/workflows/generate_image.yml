@@ -1,46 +1,26 @@
-name: Generate Water Report Image
+name: Generate Water Report
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # รันทุก 4 ชั่วโมง
-  workflow_dispatch:       # กด run ด้วยมือได้
+    - cron: '0 2 * * *'  # เวลาไทย 09:00 น.
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    # ✅ เพิ่มส่วนนี้เพื่อให้สิทธิ์ในการเขียน (push)
-    permissions:
-      contents: write
+    env:
+      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
 
     steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.11
 
-      - name: 🔧 Install dependencies
-        run: |
-          pip install -r requirements.txt
+    - name: Install dependencies
+      run: pip install -r requirements.txt
 
-      - name: 🔐 Set up environment variables
-        env:
-          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-        run: echo "Environment variables loaded"
-
-      - name: 🎨 Generate final_report.jpg
-        run: python main.py
-
-      - name: 📤 Commit and Push updated image
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # ไม่จำเป็นต้อง pull อีกครั้ง เพราะ checkout ได้เวอร์ชันล่าสุดมาแล้ว
-          git add final_report.jpg
-          git commit -m "🔁 Auto-update final_report.jpg" || echo "No changes to commit"
-          git push origin main
+    - name: Run script to generate image
+      run: python main.py
