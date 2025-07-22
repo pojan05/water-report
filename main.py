@@ -24,7 +24,6 @@ def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(60)
         driver.get(url)
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
@@ -32,16 +31,20 @@ def get_chao_phraya_dam_data():
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
         
+        # Find the strong tag with the specific text
         strong_tag = soup.find('strong', string=lambda text: text and 'ที่ท้ายเขื่อนเจ้าพระยา' in text)
         if strong_tag:
+            # Navigate to the parent table and find the relevant cell
             table = strong_tag.find_parent('table')
             if table:
+                # Find the cell containing 'ปริมาณน้ำ' and get the next relevant sibling cell
                 volume_header_cell = table.find('td', string=lambda text: text and 'ปริมาณน้ำ' in text)
                 if volume_header_cell:
                     value_cell = volume_header_cell.find_next_sibling('td')
                     if value_cell:
                         value_text = value_cell.text.strip().split('/')[0].strip()
-                        float(value_text)
+                        # Check if the extracted text is a valid number
+                        float(value_text) # This will raise ValueError if not a number
                         driver.quit()
                         return str(int(float(value_text)))
 
@@ -59,8 +62,6 @@ def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
-        # เพิ่มการตั้งเวลารอโหลดหน้าเว็บโดยเฉพาะ เพื่อจัดการกับเว็บที่ตอบสนองช้า
-        driver.set_page_load_timeout(60) 
         driver.get(url)
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
@@ -115,6 +116,7 @@ def create_report_image(dam_discharge, water_level):
         text_w = draw.textbbox((0, 0), line, font=font)[2]
         x = box_left + (box_width - text_w) / 2
         draw.text((x, y_start), line, font=font, fill="#003f5c", stroke_width=1, stroke_fill="white")
+    image.save("final_report.jpg")  # 💾 Save image file
         y_start += text_heights[i] + line_spacing
 
     base_image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
