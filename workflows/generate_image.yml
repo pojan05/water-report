@@ -1,1 +1,46 @@
+name: Generate Water Report Image
 
+on:
+  schedule:
+    # ทำงานทุกๆ ชั่วโมง (ณ นาทีที่ 15 ของทุกชั่วโมง)
+    - cron: '15 * * * *'
+  # อนุญาตให้เรากดรันเองได้จากหน้าเว็บเพื่อทดสอบ
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # ให้สิทธิ์ Action ในการเขียนไฟล์กลับเข้ามาใน repo
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run script to generate image
+        run: python main.py
+
+      - name: Commit and push the generated image
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add final_report.jpg
+          # ตรวจสอบว่ามีอะไรเปลี่ยนแปลงไหมก่อน commit
+          git diff --staged --quiet || git commit -m "Update water report image"
+          git push
