@@ -8,12 +8,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # ✅ เพิ่มส่วนนี้เพื่อให้สิทธิ์ในการเขียน (push)
+    permissions:
+      contents: write
 
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 🔧 สำคัญ เพื่อให้สามารถ push ได้
+          fetch-depth: 0
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
@@ -36,7 +40,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git pull origin main  # ✅ เปลี่ยนเป็น gh-pages ถ้าใช้ branch นั้น
+          # ไม่จำเป็นต้อง pull อีกครั้ง เพราะ checkout ได้เวอร์ชันล่าสุดมาแล้ว
           git add final_report.jpg
           git commit -m "🔁 Auto-update final_report.jpg" || echo "No changes to commit"
-          git push origin main  # ✅ เปลี่ยนเป็น gh-pages ถ้าใช้ branch นั้น
+          git push origin main
