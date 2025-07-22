@@ -30,14 +30,24 @@ def get_chao_phraya_dam_data():
         )
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
-        cells = soup.find_all('td')
-        for i, cell in enumerate(cells):
-            if "ท้ายเขื่อนเจ้าพระยา" in cell.text:
-                value_text = cells[i + 1].text.strip().split('/')[0].strip()
-                # Check if the extracted text is a valid number
-                float(value_text) # This will raise ValueError if not a number
-                driver.quit()
-                return str(int(float(value_text)))
+        
+        # Find the strong tag with the specific text
+        strong_tag = soup.find('strong', string=lambda text: text and 'ที่ท้ายเขื่อนเจ้าพระยา' in text)
+        if strong_tag:
+            # Navigate to the parent table and find the relevant cell
+            table = strong_tag.find_parent('table')
+            if table:
+                # Find the cell containing 'ปริมาณน้ำ' and get the next relevant sibling cell
+                volume_header_cell = table.find('td', string=lambda text: text and 'ปริมาณน้ำ' in text)
+                if volume_header_cell:
+                    value_cell = volume_header_cell.find_next_sibling('td')
+                    if value_cell:
+                        value_text = value_cell.text.strip().split('/')[0].strip()
+                        # Check if the extracted text is a valid number
+                        float(value_text) # This will raise ValueError if not a number
+                        driver.quit()
+                        return str(int(float(value_text)))
+
     except (ValueError, IndexError, AttributeError) as e:
         print(f"Error parsing dam data: {e}")
     except Exception as e:
