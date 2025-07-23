@@ -51,20 +51,24 @@ def get_inburi_bridge_data():
     print("💧 Fetching Inburi data using Selenium...")
     
     options = Options()
-    options.add_argument("--headless")  # ไม่ต้องแสดงหน้าต่างเบราว์เซอร์
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    # --- ✨ เพิ่ม option เพื่อเพิ่มเสถียรภาพ ---
+    options.add_argument("--disable-gpu")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
     driver = None
     try:
-        # ใช้ webdriver-manager เพื่อจัดการ driver อัตโนมัติ
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
+        # --- ✨ เพิ่มเวลารอโหลดหน้าเว็บเป็น 60 วินาที ---
+        driver.set_page_load_timeout(60)
+        
         driver.get(url)
         
-        # รอให้ตารางโหลดเสร็จ (รอจนกว่าจะเจอ tag th ที่มี scope="row")
+        # รอให้ตารางโหลดเสร็จ
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
         )
@@ -72,14 +76,13 @@ def get_inburi_bridge_data():
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
         
-        # ค้นหาข้อมูลเหมือนเดิม
         rows = soup.find_all("tr")
         for row in rows:
             th = row.find("th", {"scope": "row"})
             if th and "อินทร์บุรี" in th.get_text(strip=True):
                 tds = row.find_all("td")
                 if len(tds) >= 2:
-                    value = tds[1].get_text(strip=True) # คอลัมน์ที่ 2 คือระดับน้ำ
+                    value = tds[1].get_text(strip=True)
                     print(f"✅ Water level @Inburi (Selenium): {value}")
                     return float(value)
                     
@@ -109,7 +112,7 @@ def get_weather_status():
         print(f"❌ Weather fetch error: {e}")
         return "N/A"
 
-# --- ฟังก์ชันสำหรับสร้างรูปและส่งการแจ้งเตือน (คงเดิม) ---
+# --- ส่วนที่เหลือของไฟล์เหมือนเดิม ---
 
 def create_report_image(dam_discharge, water_level, weather_status):
     """สร้างรูปภาพรายงานผล"""
@@ -174,7 +177,6 @@ def send_line_message(message: str):
     except Exception as e:
         print(f"❌ Failed to send LINE message: {e}")
 
-# --- ส่วนหลักของการทำงาน (คงเดิม) ---
 if __name__ == "__main__":
     print("🔁 Updating water report...")
     
