@@ -134,3 +134,5 @@ if __name__ == "__main__":
     weather = get_weather_status()
     print(f"📊 ระดับน้ำ: {water_value} | เขื่อน: {dam_value} | อากาศ: {weather}")
     create_report_image(dam_value, water_value, weather)
+    with open("status.txt", "w", encoding="utf-8") as f:
+    f.write(status_line)
