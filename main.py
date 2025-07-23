@@ -19,7 +19,7 @@ def initialize_driver():
     opts.add_argument("--headless")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
 def get_chao_phraya_dam_data():
@@ -81,12 +81,12 @@ def get_weather_status():
         print(f"❌ Weather fetch error: {e}")
         return "N/A"
 
-def create_report_image(dam_discharge, water_level, weather_status):
+def create_report_image(dam_discharge, water_value, weather_status):
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
     
     lines_data = {
-        f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.": water_level,
+        f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม.": water_value,
         f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที": dam_discharge,
         f"สภาพอากาศ: {weather_status}": weather_status
     }
@@ -127,10 +127,9 @@ if __name__ == "__main__":
     if dam_value != "-": status_parts.append(f"การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที")
     if weather != "N/A": status_parts.append(f"สภาพอากาศ: {weather}")
     status_line = " | ".join(status_parts) if status_parts else "อัปเดตข้อมูลระดับน้ำ"
-    
+
     print(f"📊 {status_line}")
 
-    # --- จุดที่แก้ไข: เปลี่ยน dam_discharge เป็น dam_value ---
     create_report_image(dam_value, water_value, weather)
 
     with open("status.txt", "w", encoding="utf-8") as f:
