@@ -6,7 +6,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image, ImageDraw, ImageFont
@@ -28,7 +27,7 @@ def get_chao_phraya_dam_data():
     try:
         driver.set_page_load_timeout(90)
         driver.get(url)
-        WebDriverWait(driver, 90).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]")))
+        WebDriverWait(driver, 90).until(lambda d: "ท้ายเขื่อนเจ้าพระยา" in d.page_source)
         soup = BeautifulSoup(driver.page_source, "html.parser")
         strong_tag = soup.find('strong', string=lambda t: t and 'ที่ท้ายเขื่อนเจ้าพระยา' in t)
         if strong_tag:
@@ -50,12 +49,15 @@ def get_inburi_bridge_data():
     try:
         driver.set_page_load_timeout(90)
         driver.get(url)
-        WebDriverWait(driver, 90).until(EC.presence_of_element_located((By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]")))
+
+        # ✅ เปลี่ยนจาก XPath → page_source
+        WebDriverWait(driver, 90).until(lambda d: "อินทร์บุรี" in d.page_source)
+
         soup = BeautifulSoup(driver.page_source, "html.parser")
         for th in soup.select("th[scope='row']"):
             if "อินทร์บุรี" in th.get_text(strip=True):
                 value = th.find_parent("tr").find_all("td")[1].get_text(strip=True)
-                print(f"✅ Water level @Inburi (Selenium): {value}")
+                print(f"✅ Water level @Inburi: {value}")
                 return value
         print("❌ 'อินทร์บุรี' not found in table")
     except TimeoutException:
@@ -84,7 +86,7 @@ def get_weather_status():
 def create_report_image(dam_discharge, water_value, weather_status):
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
-    
+
     lines_data = {
         f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม.": water_value,
         f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที": dam_discharge,
@@ -102,7 +104,7 @@ def create_report_image(dam_discharge, water_value, weather_status):
     box_width = box_right - box_left
     box_height = box_bottom - box_top
     line_spacing = 20
-    
+
     total_text_height = sum([font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines])
     total_height_with_spacing = total_text_height + line_spacing * (len(lines) - 1)
     y = box_top + (box_height - total_height_with_spacing) / 2
