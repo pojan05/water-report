@@ -45,6 +45,8 @@ def get_chao_phraya_dam_data():
         print(f"❌ Dam error: {e}")
     return "-"
 
+# ... (ส่วนบนของไฟล์)
+
 def get_inburi_bridge_data():
     """ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี (ใช้ Selenium)"""
     url = "https://singburi.thaiwater.net/wl"
@@ -54,8 +56,12 @@ def get_inburi_bridge_data():
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    # --- ✨ เพิ่ม option เพื่อเพิ่มเสถียรภาพ ---
     options.add_argument("--disable-gpu")
+    
+    # --- ✨ เพิ่ม option ตัวนี้เข้าไป ---
+    # บังคับให้ Chrome ทำงานในโปรเซสเดียว ลดปัญหาการสื่อสารระหว่างโปรเซส
+    options.add_argument("--single-process")
+    
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
     driver = None
@@ -63,10 +69,13 @@ def get_inburi_bridge_data():
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
-        # --- ✨ เพิ่มเวลารอโหลดหน้าเว็บเป็น 60 วินาที ---
         driver.set_page_load_timeout(60)
         
         driver.get(url)
+        
+        # ... (ส่วนที่เหลือของฟังก์ชันเหมือนเดิม) ...
+
+# ... (ส่วนล่างของไฟล์)
         
         # รอให้ตารางโหลดเสร็จ
         WebDriverWait(driver, 20).until(
