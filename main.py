@@ -45,8 +45,6 @@ def get_chao_phraya_dam_data():
         print(f"❌ Dam error: {e}")
     return "-"
 
-# ... (ส่วนบนของไฟล์)
-
 def get_inburi_bridge_data():
     """ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี (ใช้ Selenium)"""
     url = "https://singburi.thaiwater.net/wl"
@@ -58,9 +56,9 @@ def get_inburi_bridge_data():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     
-    # --- ✨ เพิ่ม option ตัวนี้เข้าไป ---
-    # บังคับให้ Chrome ทำงานในโปรเซสเดียว ลดปัญหาการสื่อสารระหว่างโปรเซส
-    options.add_argument("--single-process")
+    # --- ✨ การแก้ไข: บังคับให้ Chrome ทำงานในโปรเซสเดียว ---
+    # ลดปัญหาการสื่อสารระหว่างโปรเซสในสภาพแวดล้อม GitHub Actions
+    options.add_argument("--single-process") #
     
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
@@ -72,10 +70,6 @@ def get_inburi_bridge_data():
         driver.set_page_load_timeout(60)
         
         driver.get(url)
-        
-        # ... (ส่วนที่เหลือของฟังก์ชันเหมือนเดิม) ...
-
-# ... (ส่วนล่างของไฟล์)
         
         # รอให้ตารางโหลดเสร็จ
         WebDriverWait(driver, 20).until(
@@ -120,8 +114,6 @@ def get_weather_status():
     except Exception as e:
         print(f"❌ Weather fetch error: {e}")
         return "N/A"
-
-# --- ส่วนที่เหลือของไฟล์เหมือนเดิม ---
 
 def create_report_image(dam_discharge, water_level, weather_status):
     """สร้างรูปภาพรายงานผล"""
