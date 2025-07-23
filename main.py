@@ -57,21 +57,6 @@ def get_inburi_bridge_data():
         print(f"❌ An error occurred with Requests-HTML: {e}")
         return "-"
 
-def get_weather_status():
-    api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key: return "N/A"
-    lat, lon = "14.9", "100.4"
-    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
-    try:
-        res = requests.get(url, timeout=30)
-        data = res.json()
-        desc = data["weather"][0]["description"]
-        emoji = "🌧️" if "ฝน" in desc else "☁️" if "เมฆ" in desc else "☀️"
-        return f"{desc.capitalize()} {emoji}"
-    except Exception as e:
-        print(f"❌ Weather fetch error: {e}")
-        return "N/A"
-
 def classify_water_level_status(water_level: float):
     diff = TALING_LEVEL - water_level
     if diff > 3:
@@ -117,73 +102,40 @@ def create_report_image(dam_discharge, water_level, weather_status):
     image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
     print("✅ final_report.jpg created")
 
-def send_line_message(message: str):
-    if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_TARGET_ID:
-        print("⚠️ LINE credentials are not set. Skipping notification.")
-        return
-    print(f"🚀 Sending LINE message: {message}")
-    url = 'https://api.line.me/v2/bot/message/push'
-    headers = { 'Content-Type': 'application/json', 'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}' }
-    payload = { 'to': LINE_TARGET_ID, 'messages': [{'type': 'text', 'text': message}] }
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=10)
-        resp.raise_for_status()
-        print("✅ LINE message sent successfully:", resp.status_code)
-    except Exception as e:
-        print(f"❌ Failed to send LINE message: {e}")
-
 # --- main ---
 if __name__ == "__main__":
+    from datetime import datetime
+    from openai import OpenAIError
+
+    from dotenv import load_dotenv
     load_dotenv()
+
     print("🔁 Updating water report...")
     current_dam_value = get_chao_phraya_dam_data()
     current_inburi_level = get_inburi_bridge_data()
-    weather = get_weather_status()
+    weather = "🌤️ อากาศดี"
+
     alert_messages = []
 
+    if isinstance(current_inburi_level, float):
+        situation, note = classify_water_level_status(current_inburi_level)
+        alert_messages.append(f"📍 สถานการณ์น้ำอินทร์บุรี: {situation}
+{note}")
+
     if current_dam_value != "-":
-        last_dam_value = ""
-        if os.path.exists(LAST_DAM_DATA_FILE):
-            with open(LAST_DAM_DATA_FILE, 'r', encoding='utf-8') as f:
-                last_dam_value = f.read().strip()
-        if current_dam_value != last_dam_value:
-            alert_messages.append(
-                f"🌊 แจ้งเตือนเขื่อนเจ้าพระยา\n"
-                f"การระบายน้ำ: {current_dam_value} ลบ.ม./วินาที\n"
-                f"(เดิม: {last_dam_value or 'N/A'})"
-            )
-            with open(LAST_DAM_DATA_FILE, 'w', encoding='utf-8') as f:
-                f.write(current_dam_value)
+        alert_messages.append(f"💧 เขื่อนเจ้าพระยา: {current_dam_value} ลบ.ม./วินาที")
 
     if isinstance(current_inburi_level, float):
-        last_inburi_level = None
-        if os.path.exists(LAST_INBURI_DATA_FILE):
-            with open(LAST_INBURI_DATA_FILE, 'r', encoding='utf-8') as f:
-                try:
-                    last_data = json.load(f)
-                    last_inburi_level = last_data.get("water_level")
-                except json.JSONDecodeError: pass
-        if last_inburi_level is not None:
-            diff = current_inburi_level - last_inburi_level
-            if abs(diff) >= NOTIFICATION_THRESHOLD:
-                direction = "⬆️ เพิ่มขึ้น" if diff > 0 else "⬇️ ลดลง"
-                alert_messages.append(
-                    f"📢 แจ้งเตือนระดับน้ำอินทร์บุรี\n"
-                    f"ระดับน้ำ: {current_inburi_level:.2f} ม.\n"
-                    f"เปลี่ยนแปลง {direction} {abs(diff):.2f} ม."
-                )
-        with open(LAST_INBURI_DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump({"water_level": current_inburi_level}, f)
-
-        situation, note = classify_water_level_status(current_inburi_level)
-        alert_messages.append(
-            f"📍 สถานการณ์น้ำอินทร์บุรี: {situation}\n{note}"
-        )
-
-    if alert_messages:
-        send_line_message("\n\n".join(alert_messages) + "\n\n✨ สนับสนุนโดย ร้านจิปาถะอินทร์บุรี")
-    else:
-        print("✅ No significant changes detected. No LINE alert will be sent.")
+        alert_messages.append(f"🌊 ระดับน้ำอินทร์บุรี: {current_inburi_level:.2f} ม.")
 
     create_report_image(current_dam_value, current_inburi_level, weather)
+
+    # 📝 สร้างไฟล์ status.txt
+    status_line = "
+
+".join(alert_messages) if alert_messages else "วันนี้ไม่มีการเปลี่ยนแปลงระดับน้ำครับ 😄"
+    with open("status.txt", "w", encoding="utf-8") as f:
+        f.write(status_line)
+    print("📄 status.txt created")
+
     print("📊 รายงานเสร็จสิ้น")
