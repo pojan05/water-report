@@ -4,3 +4,4 @@ requests-html
 pandas
 matplotlib
 pillow
+python-dotenv
