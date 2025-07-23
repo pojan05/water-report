@@ -111,7 +111,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     y = box_top + (box_height - total_height) / 2
     for line in lines:
         x = box_left + ((box_right - box_left) - draw.textlength(line, font=font)) / 2
-        draw.text((x, y), line, font=font, fill="#003f5c", stroke_width=1, stroke_fill="white")
+        draw.text((x, y), line, font=font, fill="#E74C3C", stroke_width=1, stroke_fill="white")
         y += (font.getbbox(line)[3] - font.getbbox(line)[1]) + line_spacing
     image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
     print("✅ final_report.jpg created")
