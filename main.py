@@ -26,9 +26,9 @@ def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(60)
+        driver.set_page_load_timeout(90)
         driver.get(url)
-        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]")))
+        WebDriverWait(driver, 90).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]")))
         soup = BeautifulSoup(driver.page_source, "html.parser")
         strong_tag = soup.find('strong', string=lambda t: t and 'ที่ท้ายเขื่อนเจ้าพระยา' in t)
         if strong_tag:
@@ -42,15 +42,15 @@ def get_chao_phraya_dam_data():
         print(f"❌ Dam error: {e}")
     finally:
         driver.quit()
-    return "-" # แก้ไข: คืนค่าเป็น "-" เมื่อเกิดข้อผิดพลาด
+    return "-"
 
 def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(60)
+        driver.set_page_load_timeout(90)
         driver.get(url)
-        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]")))
+        WebDriverWait(driver, 90).until(EC.presence_of_element_located((By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]")))
         soup = BeautifulSoup(driver.page_source, "html.parser")
         for th in soup.select("th[scope='row']"):
             if "อินทร์บุรี" in th.get_text(strip=True):
@@ -64,12 +64,11 @@ def get_inburi_bridge_data():
         print(f"❌ Inburi (Selenium) error: {e}")
     finally:
         driver.quit()
-    return "-" # แก้ไข: คืนค่าเป็น "-" เมื่อเกิดข้อผิดพลาด
+    return "-"
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key:
-        return "N/A"
+    if not api_key: return "N/A"
     lat, lon = "14.9", "100.4"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
@@ -86,22 +85,20 @@ def create_report_image(dam_discharge, water_level, weather_status):
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
     
-    # สร้างรายการข้อความที่จะแสดง โดยกรองบรรทัดที่ข้อมูลเป็น "-" ออกไป
     lines_data = {
         f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.": water_level,
         f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที": dam_discharge,
         f"สภาพอากาศ: {weather_status}": weather_status
     }
-    lines = [text for text, value in lines_data.items() if value != "-"]
+    lines = [text for text, value in lines_data.items() if value not in ["-", "N/A"]]
 
-    if not lines: # กรณีที่ไม่มีข้อมูลเลย
+    if not lines:
         lines = ["ไม่สามารถอัปเดตข้อมูลได้ในขณะนี้"]
 
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
-    box_left, box_right = 60, 710
-    box_top, box_bottom = 125, 370
+    box_left, box_right, box_top, box_bottom = 60, 710, 125, 370
     box_width = box_right - box_left
     box_height = box_bottom - box_top
     line_spacing = 20
@@ -122,19 +119,22 @@ def create_report_image(dam_discharge, water_level, weather_status):
 if __name__ == "__main__":
     print("🔁 Updating water report...")
     dam_value = get_chao_phraya_dam_data()
+    # ชื่อตัวแปรที่ถูกต้องคือ water_value
     water_value = get_inburi_bridge_data()
     weather = get_weather_status()
 
-    # สร้าง status_line โดยกรองข้อมูลที่เป็น "-" ออกไป
+    # สร้าง status_line โดยกรองข้อมูลที่เป็น "-" หรือ "N/A" ออกไป
     status_parts = []
-    if water_level != "-": status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.")
+    # --- จุดที่แก้ไข: เปลี่ยน water_level เป็น water_value ---
+    if water_value != "-": status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม.")
     if dam_value != "-": status_parts.append(f"การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที")
     if weather != "N/A": status_parts.append(f"สภาพอากาศ: {weather}")
-    status_line = " | ".join(status_parts)
+    status_line = " | ".join(status_parts) if status_parts else "อัปเดตข้อมูลระดับน้ำ"
     
     print(f"📊 {status_line}")
 
-    create_report_image(dam_value, water_level, weather)
+    # --- จุดที่แก้ไข: เปลี่ยน water_level เป็น water_value ---
+    create_report_image(dam_discharge, water_value, weather)
 
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(status_line)
