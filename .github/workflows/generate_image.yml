@@ -2,16 +2,16 @@ name: Generate and Post Water Report
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # ทุกวัน 09:00 เวลาไทย
+    - cron: '0 2 * * *' # ทุกวัน 09:00 เวลาไทย
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-      FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+      # ไม่ต้องใช้ FB_PAGE_TOKEN และ FB_PAGE_ID อีกต่อไป
       OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+      MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }} # เราจะสร้าง secret ตัวนี้กัน
 
     steps:
       - name: Checkout repository
@@ -25,12 +25,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate image
+      - name: Generate image and status text
         run: python main.py
 
-      - name: Send final image to Make Webhook
+      - name: Send Report to Make.com
         run: |
-          curl -X POST -F "file=@final_report.jpg" https://hook.eu2.make.com/bux1lm098yc1e1hij8u7nbly92eag22o
-
-      - name: Post to Facebook
-        run: python post_to_facebook.py
+          STATUS_TEXT=$(cat status.txt)
+          curl -X POST -F "file=@final_report.jpg" -F "status=$STATUS_TEXT" ${{ env.MAKE_WEBHOOK_URL }}
