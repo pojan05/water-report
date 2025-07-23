@@ -29,9 +29,9 @@ def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(45)
+        driver.set_page_load_timeout(60) # เพิ่มเวลารอเป็น 60 วินาที
         driver.get(url)
-        WebDriverWait(driver, 45).until(
+        WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
         )
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -51,32 +51,31 @@ def get_chao_phraya_dam_data():
 
 def get_inburi_bridge_data():
     """
-    (ปรับปรุงใหม่) ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรีผ่าน API โดยตรง
+    (แก้ไขกลับมาใช้ Selenium) ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี
+    เนื่องจาก API ไม่เสถียร การใช้ Selenium จึงเป็นวิธีที่แน่นอนกว่า
     """
-    url = "https://singburi.thaiwater.net/api/v1/wl/tele_waterlevel"
-    # เพิ่ม Headers เพื่อปลอมตัวเป็นเบราว์เซอร์
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://singburi.thaiwater.net/wl',
-        'Accept': 'application/json, text/plain, */*'
-    }
+    url = "https://singburi.thaiwater.net/wl"
+    driver = initialize_driver()
     try:
-        print("📡 Fetching Inburi water level from API...")
-        # ส่ง request พร้อม Headers
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status() # เช็คว่า request สำเร็จหรือไม่ (status code 200)
-        data = response.json()
-        for station in data.get('data', []):
-            if station.get('station_name') == 'สะพานอินทร์บุรี':
-                value = station.get('storage_data', {}).get('value')
-                if value is not None:
-                    print(f"✅ Water level @Inburi (API): {value}")
-                    return str(value)
-        print("❌ 'สะพานอินทร์บุรี' not found in API response")
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Inburi API request error: {e}")
+        driver.set_page_load_timeout(60) # เพิ่มเวลารอเป็น 60 วินาที
+        driver.get(url)
+        # รอจนกว่าจะเจอ element ที่เป็นเป้าหมาย เพื่อให้มั่นใจว่าหน้าเว็บโหลดเสร็จ
+        WebDriverWait(driver, 60).until(
+            EC.presence_of_element_located((By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]"))
+        )
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        for th in soup.select("th[scope='row']"):
+            if "อินทร์บุรี" in th.get_text(strip=True):
+                value = th.find_parent("tr").find_all("td")[1].get_text(strip=True)
+                print(f"✅ Water level @Inburi (Selenium): {value}")
+                return value
+        print("❌ 'อินทร์บุรี' not found in table")
+    except TimeoutException:
+        print("❌ Timeout loading Inburi bridge data via Selenium")
     except Exception as e:
-        print(f"❌ Inburi API processing error: {e}")
+        print(f"❌ Inburi (Selenium) error: {e}")
+    finally:
+        driver.quit()
     return "ไม่สามารถดึงข้อมูล"
 
 def get_weather_status():
@@ -88,14 +87,12 @@ def get_weather_status():
     lat, lon = "14.9", "100.4"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
-        print(f"📡 Fetching weather from: {url.split('?')[0]}")
         res = requests.get(url, timeout=30)
         data = res.json()
         desc = data["weather"][0]["description"]
         if "ฝน" in desc: emoji = "🌧️"
         elif "เมฆ" in desc: emoji = "☁️"
-        elif "แดด" in desc or "ท้องฟ้า" in desc: emoji = "☀️"
-        else: emoji = "⛅"
+        else: emoji = "☀️"
         return f"{desc.capitalize()} {emoji}"
     except Exception as e:
         print(f"❌ Weather fetch error: {e}")
@@ -103,10 +100,6 @@ def get_weather_status():
 
 def create_report_image(dam_discharge, water_level, weather_status):
     """สร้างรูปภาพรายงานพร้อมจัดวางข้อความให้อยู่กึ่งกลาง"""
-    if not os.path.exists("background.png"):
-        print("❌ background.png not found")
-        return
-
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
 
@@ -115,7 +108,6 @@ def create_report_image(dam_discharge, water_level, weather_status):
         f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที",
         f"สภาพอากาศ: {weather_status}"
     ]
-
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
