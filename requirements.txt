@@ -1,7 +1,6 @@
 requests
 beautifulsoup4
-selenium
-webdriver-manager
+requests-html
 pandas
 matplotlib
 pillow
