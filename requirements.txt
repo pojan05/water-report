@@ -5,3 +5,4 @@ pandas
 matplotlib
 pillow
 python-dotenv
+lxml_html_clean
