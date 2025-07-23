@@ -14,22 +14,23 @@ jobs:
       OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate image
+        run: python main.py
+
       - name: Send final image to Make Webhook
         run: |
           curl -X POST -F "file=@final_report.jpg" https://hook.eu2.make.com/bux1lm098yc1e1hij8u7nbly92eag22o
 
-    - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: 3.11
-
-    - name: Install dependencies
-      run: pip install -r requirements.txt
-
-    - name: Generate image
-      run: python main.py
-
-    - name: Post to Facebook
-      run: python post_to_facebook.py
+      - name: Post to Facebook
+        run: python post_to_facebook.py
