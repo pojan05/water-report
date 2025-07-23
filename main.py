@@ -51,15 +51,12 @@ def get_inburi_bridge_data():
     print("💧 Fetching Inburi data using Selenium...")
     
     options = Options()
-    options.add_argument("--headless")
+    # ใช้ Options ที่เสถียรที่สุดสำหรับ GitHub Actions
+    options.add_argument("--headless=chrome")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    
-    # --- ✨ การแก้ไข: บังคับให้ Chrome ทำงานในโปรเซสเดียว ---
-    # ลดปัญหาการสื่อสารระหว่างโปรเซสในสภาพแวดล้อม GitHub Actions
-    options.add_argument("--single-process") #
-    
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
     driver = None
@@ -114,6 +111,7 @@ def get_weather_status():
     except Exception as e:
         print(f"❌ Weather fetch error: {e}")
         return "N/A"
+
 
 def create_report_image(dam_discharge, water_level, weather_status):
     """สร้างรูปภาพรายงานผล"""
