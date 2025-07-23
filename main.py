@@ -134,7 +134,6 @@ if __name__ == "__main__":
     weather = get_weather_status()
 
     # 1. สร้างตัวแปร status_line ขึ้นมาเก็บข้อความที่จะโพสต์
-    # (เราใช้ข้อความรูปแบบเดียวกับที่แสดงในภาพเพื่อให้ข้อมูลครบถ้วน)
     status_line = f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม. | การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที | สภาพอากาศ: {weather}"
 
     # พิมพ์ status_line เพื่อดูใน log
@@ -145,4 +144,4 @@ if __name__ == "__main__":
 
     # 2. บันทึก status_line ลงไฟล์ status.txt (และแก้ไขการย่อหน้า)
     with open("status.txt", "w", encoding="utf-8") as f:
-        f.write(status_line) # <-- ย่อหน้าให้ถูกต้อง
+        f.write(status_line)
