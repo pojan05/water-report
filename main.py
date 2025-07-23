@@ -5,22 +5,26 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
+# --- เพิ่ม Library สำหรับ Selenium ---
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 # โหลดค่าจากไฟล์ .env
 load_dotenv()
 
 # --- ค่าคงที่และตัวแปรสำหรับแจ้งเตือน ---
-# ไฟล์สำหรับเก็บข้อมูลล่าสุดเพื่อเปรียบเทียบ
 LAST_DAM_DATA_FILE = 'last_dam_data.txt'
 LAST_INBURI_DATA_FILE = 'last_inburi_data.json'
-
-# เกณฑ์การแจ้งเตือนระดับน้ำอินทร์บุรี (เมตร)
 NOTIFICATION_THRESHOLD = 0.1
-
-# ข้อมูลสำหรับส่ง LINE (ควรตั้งค่าใน Environment Variables)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_TARGET_ID = os.getenv('LINE_TARGET_ID')
 
-# --- ฟังก์ชันหลักในการดึงข้อมูล (คงเดิม) ---
+# --- ฟังก์ชันดึงข้อมูล ---
 
 def get_chao_phraya_dam_data():
     """ดึงข้อมูลการระบายน้ำท้ายเขื่อนเจ้าพระยา"""
@@ -42,26 +46,52 @@ def get_chao_phraya_dam_data():
     return "-"
 
 def get_inburi_bridge_data():
-    """ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี"""
+    """ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี (ใช้ Selenium)"""
     url = "https://singburi.thaiwater.net/wl"
+    print("💧 Fetching Inburi data using Selenium...")
+    
+    options = Options()
+    options.add_argument("--headless")  # ไม่ต้องแสดงหน้าต่างเบราว์เซอร์
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+    driver = None
     try:
-        res = requests.get(url, timeout=30)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
+        # ใช้ webdriver-manager เพื่อจัดการ driver อัตโนมัติ
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        driver.get(url)
+        
+        # รอให้ตารางโหลดเสร็จ (รอจนกว่าจะเจอ tag th ที่มี scope="row")
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
+        )
+        
+        html = driver.page_source
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # ค้นหาข้อมูลเหมือนเดิม
         rows = soup.find_all("tr")
         for row in rows:
             th = row.find("th", {"scope": "row"})
             if th and "อินทร์บุรี" in th.get_text(strip=True):
                 tds = row.find_all("td")
                 if len(tds) >= 2:
-                    value = tds[1].get_text(strip=True)
-                    print(f"✅ Water level @Inburi: {value}")
-                    # คืนค่าเป็น float เพื่อให้เปรียบเทียบได้
+                    value = tds[1].get_text(strip=True) # คอลัมน์ที่ 2 คือระดับน้ำ
+                    print(f"✅ Water level @Inburi (Selenium): {value}")
                     return float(value)
-        print("❌ Inburi row not found in table")
+                    
+        print("❌ Inburi row not found in table after Selenium load.")
+        return "-"
+
     except Exception as e:
-        print(f"❌ Error fetching Inburi: {e}")
-    return "-"
+        print(f"❌ An error occurred with Selenium: {e}")
+        return "-"
+    finally:
+        if driver:
+            driver.quit()
 
 def get_weather_status():
     """ดึงข้อมูลสภาพอากาศ"""
@@ -79,14 +109,13 @@ def get_weather_status():
         print(f"❌ Weather fetch error: {e}")
         return "N/A"
 
-# --- ฟังก์ชันสำหรับสร้างรูปและส่งการแจ้งเตือน ---
+# --- ฟังก์ชันสำหรับสร้างรูปและส่งการแจ้งเตือน (คงเดิม) ---
 
 def create_report_image(dam_discharge, water_level, weather_status):
     """สร้างรูปภาพรายงานผล"""
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
 
-    # แปลงค่าตัวเลขให้เป็นข้อความสำหรับแสดงผล
     water_value_str = f"{water_level:.2f}" if isinstance(water_level, float) else str(water_level)
     dam_discharge_str = str(dam_discharge)
 
@@ -145,19 +174,16 @@ def send_line_message(message: str):
     except Exception as e:
         print(f"❌ Failed to send LINE message: {e}")
 
-# --- ส่วนหลักของการทำงาน ---
+# --- ส่วนหลักของการทำงาน (คงเดิม) ---
 if __name__ == "__main__":
     print("🔁 Updating water report...")
     
-    # 1. ดึงข้อมูลใหม่ทั้งหมด
     current_dam_value = get_chao_phraya_dam_data()
     current_inburi_level = get_inburi_bridge_data()
     weather = get_weather_status()
     
-    # ลิสต์สำหรับเก็บข้อความแจ้งเตือน
     alert_messages = []
 
-    # --- 2. ตรวจสอบและแจ้งเตือนข้อมูลเขื่อนเจ้าพระยา ---
     if current_dam_value != "-":
         last_dam_value = ""
         if os.path.exists(LAST_DAM_DATA_FILE):
@@ -171,11 +197,9 @@ if __name__ == "__main__":
                 f"การระบายน้ำ: {current_dam_value} ลบ.ม./วินาที\n"
                 f"(เดิม: {last_dam_value or 'N/A'})"
             )
-            # บันทึกค่าใหม่
             with open(LAST_DAM_DATA_FILE, 'w', encoding='utf-8') as f:
                 f.write(current_dam_value)
     
-    # --- 3. ตรวจสอบและแจ้งเตือนข้อมูลสะพานอินทร์บุรี ---
     if isinstance(current_inburi_level, float):
         last_inburi_level = None
         if os.path.exists(LAST_INBURI_DATA_FILE):
@@ -199,20 +223,16 @@ if __name__ == "__main__":
         else:
             print("[INFO] No previous Inburi data. Skipping alert for the first time.")
 
-        # บันทึกข้อมูลใหม่เสมอ
         with open(LAST_INBURI_DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump({"water_level": current_inburi_level}, f)
 
-    # --- 4. ส่งการแจ้งเตือนถ้ามีการเปลี่ยนแปลง ---
     if alert_messages:
-        # กำหนดข้อความส่วนท้ายแยกออกมา
         FOOTER_MESSAGE = "\n\n✨ สนับสนุนโดย ร้านจิปาถะอินทร์บุรี"
         full_message = "\n\n".join(alert_messages) + FOOTER_MESSAGE
         send_line_message(full_message)
     else:
         print("✅ No significant changes detected. No LINE alert will be sent.")
 
-    # --- 5. สร้างรูปภาพและไฟล์ status สำหรับ Workflow หลัก (ทำทุกครั้ง) ---
     status_parts = []
     if isinstance(current_inburi_level, float):
         status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {current_inburi_level:.2f} ม.")
@@ -224,9 +244,7 @@ if __name__ == "__main__":
     status_line = " | ".join(status_parts) if status_parts else "อัปเดตข้อมูลระดับน้ำ"
     print(f"📊 Status: {status_line}")
 
-    # สร้างรูปภาพ
     create_report_image(current_dam_value, current_inburi_level, weather)
 
-    # สร้างไฟล์ status.txt
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(status_line)
