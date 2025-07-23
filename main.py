@@ -42,7 +42,7 @@ def get_chao_phraya_dam_data():
         print(f"❌ Dam error: {e}")
     finally:
         driver.quit()
-    return "-" # แก้ไข: คืนค่าเป็น "-" เมื่อเกิดข้อผิดพลาด
+    return "-"
 
 def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
@@ -64,7 +64,7 @@ def get_inburi_bridge_data():
         print(f"❌ Inburi (Selenium) error: {e}")
     finally:
         driver.quit()
-    return "-" # แก้ไข: คืนค่าเป็น "-" เมื่อเกิดข้อผิดพลาด
+    return "-"
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
@@ -85,8 +85,7 @@ def get_weather_status():
 def create_report_image(dam_discharge, water_level, weather_status):
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
-    
-    # สร้างรายการข้อความที่จะแสดง โดยกรองบรรทัดที่ข้อมูลเป็น "-" ออกไป
+
     lines_data = {
         f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.": water_level,
         f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที": dam_discharge,
@@ -94,7 +93,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     }
     lines = [text for text, value in lines_data.items() if value != "-"]
 
-    if not lines: # กรณีที่ไม่มีข้อมูลเลย
+    if not lines:
         lines = ["ไม่สามารถอัปเดตข้อมูลได้ในขณะนี้"]
 
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
@@ -105,7 +104,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     box_width = box_right - box_left
     box_height = box_bottom - box_top
     line_spacing = 20
-    
+
     total_text_height = sum([font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines])
     total_height_with_spacing = total_text_height + line_spacing * (len(lines) - 1)
     y = box_top + (box_height - total_height_with_spacing) / 2
@@ -125,16 +124,14 @@ if __name__ == "__main__":
     water_value = get_inburi_bridge_data()
     weather = get_weather_status()
 
-    # สร้าง status_line โดยกรองข้อมูลที่เป็น "-" ออกไป
     status_parts = []
-    if water_level != "-": status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.")
+    if water_value != "-": status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม.")
     if dam_value != "-": status_parts.append(f"การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที")
     if weather != "N/A": status_parts.append(f"สภาพอากาศ: {weather}")
     status_line = " | ".join(status_parts)
-    
-    print(f"📊 {status_line}")
 
-    create_report_image(dam_value, water_level, weather)
+    print(f"📊 {status_line}")
+    create_report_image(dam_value, water_value, weather)
 
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(status_line)
