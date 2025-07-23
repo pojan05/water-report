@@ -1,34 +1,16 @@
 import os
 import requests
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
 load_dotenv()
 
-def initialize_driver():
-    opts = Options()
-    opts.add_argument("--headless")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
-
 def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
-    driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(90)
-        driver.get(url)
-        WebDriverWait(driver, 90).until(lambda d: "ท้ายเขื่อนเจ้าพระยา" in d.page_source)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        res = requests.get(url, timeout=30)
+        soup = BeautifulSoup(res.text, "html.parser")
         strong_tag = soup.find('strong', string=lambda t: t and 'ที่ท้ายเขื่อนเจ้าพระยา' in t)
         if strong_tag:
             table = strong_tag.find_parent('table')
@@ -39,35 +21,26 @@ def get_chao_phraya_dam_data():
                 return str(int(float(value)))
     except Exception as e:
         print(f"❌ Dam error: {e}")
-    finally:
-        driver.quit()
     return "-"
 
 def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
-    driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(90)
-        driver.get(url)
-
-        # ✅ ใช้ Selenium รอ element จริง (ไม่หลอก)
-        WebDriverWait(driver, 90).until(
-            lambda d: d.find_element(By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]")
-        )
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        for th in soup.select("th[scope='row']"):
-            if "อินทร์บุรี" in th.get_text(strip=True):
-                value = th.find_parent("tr").find_all("td")[1].get_text(strip=True)
-                print(f"✅ Water level @Inburi: {value}")
-                return value
-        print("❌ 'อินทร์บุรี' not found in table")
-    except TimeoutException:
-        print("❌ Timeout loading Inburi bridge data via Selenium")
+        res = requests.get(url, timeout=30)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        rows = soup.find_all("tr")
+        for row in rows:
+            th = row.find("th", {"scope": "row"})
+            if th and "อินทร์บุรี" in th.get_text(strip=True):
+                tds = row.find_all("td")
+                if len(tds) >= 1:
+                    value = tds[1].get_text(strip=True)
+                    print(f"✅ Water level @Inburi (no Selenium): {value}")
+                    return value
+        print("❌ Inburi row not found in table")
     except Exception as e:
-        print(f"❌ Inburi (Selenium) error: {e}")
-    finally:
-        driver.quit()
+        print(f"❌ Error fetching Inburi (no Selenium): {e}")
     return "-"
 
 def get_weather_status():
