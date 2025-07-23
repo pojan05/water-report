@@ -50,8 +50,10 @@ def get_inburi_bridge_data():
         driver.set_page_load_timeout(90)
         driver.get(url)
 
-        # ✅ เปลี่ยนจาก XPath → page_source
-        WebDriverWait(driver, 90).until(lambda d: "อินทร์บุรี" in d.page_source)
+        # ✅ ใช้ Selenium รอ element จริง (ไม่หลอก)
+        WebDriverWait(driver, 90).until(
+            lambda d: d.find_element(By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]")
+        )
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
         for th in soup.select("th[scope='row']"):
