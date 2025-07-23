@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import re # ✨ เพิ่ม import สำหรับ Regular Expression
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
@@ -27,23 +28,37 @@ LINE_TARGET_ID = os.getenv('LINE_TARGET_ID')
 # --- ฟังก์ชันดึงข้อมูล ---
 
 def get_chao_phraya_dam_data():
-    """ดึงข้อมูลการระบายน้ำท้ายเขื่อนเจ้าพระยา"""
+    """ดึงข้อมูลการระบายน้ำท้ายเขื่อนเจ้าพระยา (วิธีใหม่ที่เสถียรกว่า)"""
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
+    print("💧 Fetching Chao Phraya Dam data (JSON method)...")
     try:
         res = requests.get(url, timeout=30)
         res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        strong_tag = soup.find('strong', string=lambda t: t and 'ที่ท้ายเขื่อนเจ้าพระยา' in t)
-        if strong_tag:
-            table = strong_tag.find_parent('table')
-            td = table.find('td', string=lambda t: t and 'ปริมาณน้ำ' in t)
-            if td:
-                value = td.find_next_sibling('td').text.strip().split('/')[0]
-                print(f"✅ Dam discharge raw value: {value}")
-                return str(int(float(value)))
-    except Exception as e:
+        res.encoding = 'utf-8'
+
+        # ค้นหาข้อมูล JSON ที่อยู่ในตัวแปรชื่อ "json_data"
+        match = re.search(r'var json_data = (\[.*\]);', res.text)
+        if not match:
+            print("❌ Dam error: Could not find json_data variable in the page.")
+            return "-"
+
+        json_string = match.group(1)
+        data = json.loads(json_string)
+
+        # ดึงข้อมูลจากสถานี C13 (ท้ายเขื่อนเจ้าพระยา)
+        # โครงสร้าง: data[0] -> itc_water -> C13 -> storage
+        dam_discharge = data[0]['itc_water']['C13']['storage']
+        
+        if dam_discharge:
+            value = str(int(float(dam_discharge)))
+            print(f"✅ Dam discharge raw value (JSON): {value}")
+            return value
+
+    except (requests.exceptions.RequestException, KeyError, IndexError, json.JSONDecodeError) as e:
         print(f"❌ Dam error: {e}")
+    
     return "-"
+
 
 def get_inburi_bridge_data():
     """ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี (ใช้ Selenium)"""
@@ -51,7 +66,6 @@ def get_inburi_bridge_data():
     print("💧 Fetching Inburi data using Selenium...")
     
     options = Options()
-    # ใช้ Options ที่เสถียรที่สุดสำหรับ GitHub Actions
     options.add_argument("--headless=chrome")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -65,10 +79,8 @@ def get_inburi_bridge_data():
         driver = webdriver.Chrome(service=service, options=options)
         
         driver.set_page_load_timeout(60)
-        
         driver.get(url)
         
-        # รอให้ตารางโหลดเสร็จ
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "th[scope='row']"))
         )
