@@ -70,7 +70,7 @@ def get_weather_status():
         return f"{desc.capitalize()}" # แก้ไขตรงนี้ให้ไม่รวม emoji
     except Exception as e:
         print(f"❌ Weather fetch error: {e}")
-        return "N/A""
+        return "N/A"
 
 def classify_water_level_status(water_level: float):
     diff = TALING_LEVEL - water_level
