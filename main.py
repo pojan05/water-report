@@ -29,7 +29,7 @@ def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(45) # เพิ่มเวลารอ
+        driver.set_page_load_timeout(45)
         driver.get(url)
         WebDriverWait(driver, 45).until(
             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
@@ -52,13 +52,19 @@ def get_chao_phraya_dam_data():
 def get_inburi_bridge_data():
     """
     (ปรับปรุงใหม่) ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรีผ่าน API โดยตรง
-    วิธีนี้เร็วกว่าและเสถียรกว่าการใช้ Selenium มาก
     """
     url = "https://singburi.thaiwater.net/api/v1/wl/tele_waterlevel"
+    # เพิ่ม Headers เพื่อปลอมตัวเป็นเบราว์เซอร์
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://singburi.thaiwater.net/wl',
+        'Accept': 'application/json, text/plain, */*'
+    }
     try:
         print("📡 Fetching Inburi water level from API...")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status() # เช็คว่า request สำเร็จหรือไม่
+        # ส่ง request พร้อม Headers
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status() # เช็คว่า request สำเร็จหรือไม่ (status code 200)
         data = response.json()
         for station in data.get('data', []):
             if station.get('station_name') == 'สะพานอินทร์บุรี':
@@ -73,7 +79,6 @@ def get_inburi_bridge_data():
         print(f"❌ Inburi API processing error: {e}")
     return "ไม่สามารถดึงข้อมูล"
 
-
 def get_weather_status():
     """ดึงข้อมูลสภาพอากาศจาก OpenWeatherMap"""
     api_key = os.getenv("OPENWEATHER_API_KEY")
@@ -87,7 +92,6 @@ def get_weather_status():
         res = requests.get(url, timeout=30)
         data = res.json()
         desc = data["weather"][0]["description"]
-        # กำหนด emoji ให้หลากหลายขึ้น
         if "ฝน" in desc: emoji = "🌧️"
         elif "เมฆ" in desc: emoji = "☁️"
         elif "แดด" in desc or "ท้องฟ้า" in desc: emoji = "☀️"
@@ -98,9 +102,7 @@ def get_weather_status():
         return "ข้อมูลสภาพอากาศไม่พร้อม"
 
 def create_report_image(dam_discharge, water_level, weather_status):
-    """
-    (ปรับปรุงใหม่) สร้างรูปภาพรายงานพร้อมจัดวางข้อความให้อยู่กึ่งกลาง
-    """
+    """สร้างรูปภาพรายงานพร้อมจัดวางข้อความให้อยู่กึ่งกลาง"""
     if not os.path.exists("background.png"):
         print("❌ background.png not found")
         return
@@ -108,43 +110,31 @@ def create_report_image(dam_discharge, water_level, weather_status):
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
 
-    # แก้ไขข้อความให้สวยงามขึ้น
     lines = [
         f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.",
         f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที",
         f"สภาพอากาศ: {weather_status}"
     ]
 
-    # กำหนดฟอนต์ (รองรับทั้ง local และบน GitHub Actions)
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
-    # กำหนดกรอบและคำนวณตำแหน่งกึ่งกลาง
     box_left, box_right = 60, 710
     box_top, box_bottom = 125, 370
     box_width = box_right - box_left
     box_height = box_bottom - box_top
-
-    line_spacing = 20  # เพิ่มระยะห่างระหว่างบรรทัด
+    line_spacing = 20
     
-    # คำนวณความสูงรวมของข้อความทั้งหมดเพื่อหาจุดเริ่มต้นในแนวตั้ง (y)
     total_text_height = sum([font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines])
     total_height_with_spacing = total_text_height + line_spacing * (len(lines) - 1)
     y = box_top + (box_height - total_height_with_spacing) / 2
 
-    # วาดข้อความแต่ละบรรทัด
     for line in lines:
-        # คำนวณตำแหน่งกึ่งกลางในแนวนอน (x)
         text_width = draw.textlength(line, font=font)
         x = box_left + (box_width - text_width) / 2
-        
-        # วาดข้อความพร้อมขอบสีขาวเพื่อให้อ่านง่ายขึ้น
         draw.text((x, y), line, font=font, fill="#003f5c", stroke_width=1, stroke_fill="white")
-        
-        # เลื่อนตำแหน่ง y สำหรับบรรทัดถัดไป
         y += (font.getbbox(line)[3] - font.getbbox(line)[1]) + line_spacing
 
-    # บันทึกรูปภาพ
     image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
     print("✅ final_report.jpg created")
 
