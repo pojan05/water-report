@@ -12,11 +12,9 @@ from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
-# โหลด .env สำหรับ OPENWEATHER_API_KEY
 load_dotenv()
 
 def initialize_driver():
-    """ตั้งค่าและคืนค่า Chrome Driver สำหรับ Selenium"""
     opts = Options()
     opts.add_argument("--headless")
     opts.add_argument("--no-sandbox")
@@ -25,15 +23,12 @@ def initialize_driver():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
 def get_chao_phraya_dam_data():
-    """ดึงข้อมูลการระบายน้ำท้ายเขื่อนเจ้าพระยาด้วย Selenium"""
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(60) # เพิ่มเวลารอเป็น 60 วินาที
+        driver.set_page_load_timeout(60)
         driver.get(url)
-        WebDriverWait(driver, 60).until(
-            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]"))
-        )
+        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'ท้ายเขื่อนเจ้าพระยา')]")))
         soup = BeautifulSoup(driver.page_source, "html.parser")
         strong_tag = soup.find('strong', string=lambda t: t and 'ที่ท้ายเขื่อนเจ้าพระยา' in t)
         if strong_tag:
@@ -47,22 +42,15 @@ def get_chao_phraya_dam_data():
         print(f"❌ Dam error: {e}")
     finally:
         driver.quit()
-    return "ไม่สามารถดึงข้อมูล"
+    return "-" # แก้ไข: คืนค่าเป็น "-" เมื่อเกิดข้อผิดพลาด
 
 def get_inburi_bridge_data():
-    """
-    (แก้ไขกลับมาใช้ Selenium) ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี
-    เนื่องจาก API ไม่เสถียร การใช้ Selenium จึงเป็นวิธีที่แน่นอนกว่า
-    """
     url = "https://singburi.thaiwater.net/wl"
     driver = initialize_driver()
     try:
-        driver.set_page_load_timeout(60) # เพิ่มเวลารอเป็น 60 วินาที
+        driver.set_page_load_timeout(60)
         driver.get(url)
-        # รอจนกว่าจะเจอ element ที่เป็นเป้าหมาย เพื่อให้มั่นใจว่าหน้าเว็บโหลดเสร็จ
-        WebDriverWait(driver, 60).until(
-            EC.presence_of_element_located((By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]"))
-        )
+        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//th[contains(text(), 'อินทร์บุรี')]")))
         soup = BeautifulSoup(driver.page_source, "html.parser")
         for th in soup.select("th[scope='row']"):
             if "อินทร์บุรี" in th.get_text(strip=True):
@@ -76,38 +64,39 @@ def get_inburi_bridge_data():
         print(f"❌ Inburi (Selenium) error: {e}")
     finally:
         driver.quit()
-    return "ไม่สามารถดึงข้อมูล"
+    return "-" # แก้ไข: คืนค่าเป็น "-" เมื่อเกิดข้อผิดพลาด
 
 def get_weather_status():
-    """ดึงข้อมูลสภาพอากาศจาก OpenWeatherMap"""
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
-        print("❌ OPENWEATHER_API_KEY not found in environment")
-        return "ข้อมูลสภาพอากาศไม่พร้อม"
+        return "N/A"
     lat, lon = "14.9", "100.4"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
         res = requests.get(url, timeout=30)
         data = res.json()
         desc = data["weather"][0]["description"]
-        if "ฝน" in desc: emoji = "🌧️"
-        elif "เมฆ" in desc: emoji = "☁️"
-        else: emoji = "☀️"
+        emoji = "🌧️" if "ฝน" in desc else "☁️" if "เมฆ" in desc else "☀️"
         return f"{desc.capitalize()} {emoji}"
     except Exception as e:
         print(f"❌ Weather fetch error: {e}")
-        return "ข้อมูลสภาพอากาศไม่พร้อม"
+        return "N/A"
 
 def create_report_image(dam_discharge, water_level, weather_status):
-    """สร้างรูปภาพรายงานพร้อมจัดวางข้อความให้อยู่กึ่งกลาง"""
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
+    
+    # สร้างรายการข้อความที่จะแสดง โดยกรองบรรทัดที่ข้อมูลเป็น "-" ออกไป
+    lines_data = {
+        f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.": water_level,
+        f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที": dam_discharge,
+        f"สภาพอากาศ: {weather_status}": weather_status
+    }
+    lines = [text for text, value in lines_data.items() if value != "-"]
 
-    lines = [
-        f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.",
-        f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที",
-        f"สภาพอากาศ: {weather_status}"
-    ]
+    if not lines: # กรณีที่ไม่มีข้อมูลเลย
+        lines = ["ไม่สามารถอัปเดตข้อมูลได้ในขณะนี้"]
+
     font_path = "Sarabun-Bold.ttf" if os.path.exists("Sarabun-Bold.ttf") else "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 34)
 
@@ -136,10 +125,16 @@ if __name__ == "__main__":
     water_value = get_inburi_bridge_data()
     weather = get_weather_status()
 
-    status_line = f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม. | การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที | สภาพอากาศ: {weather}"
+    # สร้าง status_line โดยกรองข้อมูลที่เป็น "-" ออกไป
+    status_parts = []
+    if water_level != "-": status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {water_level} ม.")
+    if dam_value != "-": status_parts.append(f"การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที")
+    if weather != "N/A": status_parts.append(f"สภาพอากาศ: {weather}")
+    status_line = " | ".join(status_parts)
+    
     print(f"📊 {status_line}")
 
-    create_report_image(dam_value, water_value, weather)
+    create_report_image(dam_value, water_level, weather)
 
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(status_line)
