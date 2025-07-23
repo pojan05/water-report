@@ -119,13 +119,10 @@ def create_report_image(dam_discharge, water_level, weather_status):
 if __name__ == "__main__":
     print("🔁 Updating water report...")
     dam_value = get_chao_phraya_dam_data()
-    # ชื่อตัวแปรที่ถูกต้องคือ water_value
     water_value = get_inburi_bridge_data()
     weather = get_weather_status()
 
-    # สร้าง status_line โดยกรองข้อมูลที่เป็น "-" หรือ "N/A" ออกไป
     status_parts = []
-    # --- จุดที่แก้ไข: เปลี่ยน water_level เป็น water_value ---
     if water_value != "-": status_parts.append(f"ระดับน้ำ ณ อินทร์บุรี: {water_value} ม.")
     if dam_value != "-": status_parts.append(f"การระบายน้ำท้ายเขื่อนเจ้าพระยา: {dam_value} ลบ.ม./วินาที")
     if weather != "N/A": status_parts.append(f"สภาพอากาศ: {weather}")
@@ -133,8 +130,8 @@ if __name__ == "__main__":
     
     print(f"📊 {status_line}")
 
-    # --- จุดที่แก้ไข: เปลี่ยน water_level เป็น water_value ---
-    create_report_image(dam_discharge, water_value, weather)
+    # --- จุดที่แก้ไข: เปลี่ยน dam_discharge เป็น dam_value ---
+    create_report_image(dam_value, water_value, weather)
 
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(status_line)
