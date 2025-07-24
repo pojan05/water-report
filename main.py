@@ -104,7 +104,8 @@ def create_report_image(dam_discharge, water_level, weather_status):
     Y_START = 340
     
     try:
-        image = Image.open("background.jpg").convert("RGB")
+        # ❗ แก้ไขจาก .jpg เป็น .png ตามชื่อไฟล์จริงของคุณ
+        image = Image.open("background.png").convert("RGB")
     except FileNotFoundError:
         image = Image.new("RGB", (IMAGE_WIDTH, 1080), "white")
 
@@ -113,7 +114,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     try:
         font_bold_l = ImageFont.truetype("Sarabun-Bold.ttf", 60)
         font_regular_l = ImageFont.truetype("Sarabun-Regular.ttf", 48)
-        font_regular_m = ImageFont.truetype("Sarabun-Regular.ttf", 42) # ตัวแปรที่ถูกต้องถูกสร้างไว้ที่นี่
+        font_regular_m = ImageFont.truetype("Sarabun-Regular.ttf", 42)
     except FileNotFoundError:
         font_bold_l = font_regular_l = font_regular_m = ImageFont.load_default()
 
@@ -142,7 +143,6 @@ def create_report_image(dam_discharge, water_level, weather_status):
     # สถานการณ์
     draw.text((IMAGE_WIDTH / 2, y), f"สถานการณ์: {sit_text}", font=font_bold_l, fill=TEXT_COLOR, anchor="ms")
     y += 80
-    # แก้ไขจาก regular_m เป็น font_regular_m
     draw.text((IMAGE_WIDTH / 2, y), sit_detail, font=font_regular_m, fill=TEXT_COLOR, anchor="ms")
     
     image.save("final_report.jpg", quality=95)
