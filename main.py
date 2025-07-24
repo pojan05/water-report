@@ -100,7 +100,9 @@ def generate_facebook_caption(water_level, discharge, weather) -> str:
 def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
-    center_x = IMAGE_WIDTH // 2
+    X_LEFT = 100  # หรือ 90, 110 แล้วแต่ตำแหน่งพอดี
+draw.text((X_LEFT, y), "...", anchor="ls")  # ✅ ใช้ anchor="ls" เพื่อจัดชิดซ้าย
+
     Y_START = 150
 
     try:
