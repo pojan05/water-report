@@ -100,8 +100,9 @@ def generate_facebook_caption(water_level, discharge, weather) -> str:
 def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
-    Y_START = 100 #ปรับค่าเริ่มต้น
-    
+    X_LEFT = 120       # ขยับข้อความไปทางซ้ายให้อยู่ในกล่องเหลือง
+    Y_START = 260      # เริ่มต้นให้พอดีด้านบนกล่องเหลือง
+
     try:
         image = Image.open("background.png").convert("RGB")
     except FileNotFoundError:
@@ -110,15 +111,13 @@ def create_report_image(dam_discharge, water_level, weather_status):
     draw = ImageDraw.Draw(image)
 
     try:
-        # ปรับขนาดฟอนต์ให้เหมาะสม
-        font_label = ImageFont.truetype("Sarabun-Regular.ttf", 42)
-        font_value_bold = ImageFont.truetype("Sarabun-Bold.ttf", 58)
-        font_value_regular = ImageFont.truetype("Sarabun-Regular.ttf", 42)
-        font_sit_bold = ImageFont.truetype("Sarabun-Bold.ttf", 50)
-        font_sit_detail = ImageFont.truetype("Sarabun-Regular.ttf", 42)
-
+        # 🔽 ปรับขนาดฟอนต์ให้เล็กลงโดยรวม
+        font_label = ImageFont.truetype("Sarabun-Regular.ttf", 34)
+        font_value_bold = ImageFont.truetype("Sarabun-Bold.ttf", 46)
+        font_value_regular = ImageFont.truetype("Sarabun-Regular.ttf", 34)
+        font_sit_bold = ImageFont.truetype("Sarabun-Bold.ttf", 40)
+        font_sit_detail = ImageFont.truetype("Sarabun-Regular.ttf", 34)
     except FileNotFoundError:
-        # Fallback fonts
         font_label = font_value_bold = font_value_regular = font_sit_bold = font_sit_detail = ImageFont.load_default()
 
     level_text = f"{water_level:.2f} ม." if isinstance(water_level, float) else "N/A"
@@ -134,26 +133,20 @@ def create_report_image(dam_discharge, water_level, weather_status):
         sit_text, sit_detail = "ปกติ", "น้ำยังห่างตลิ่ง ปลอดภัยจ้า"
 
     y = Y_START
-    # --- ปรับ Layout การแสดงผลทั้งหมด ---
-    # 1. ระดับน้ำ
-    draw.text((IMAGE_WIDTH / 2, y), "ระดับน้ำ ณ อินทร์บุรี", font=font_label, fill=TEXT_COLOR, anchor="ms")
-    y += 65
-    draw.text((IMAGE_WIDTH / 2, y), level_text, font=font_value_bold, fill=TEXT_COLOR, anchor="ms")
-    y += 90
 
-    # 2. การระบายน้ำ
-    draw.text((IMAGE_WIDTH / 2, y), f"การระบายน้ำท้ายเขื่อนฯ: {discharge_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ms")
-    y += 85
-    
-    # 3. สภาพอากาศ
-    draw.text((IMAGE_WIDTH / 2, y), f"สภาพอากาศ: {weather_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ms")
-    y += 110
+    # ✅ ชิดซ้ายทั้งหมด พร้อมปรับขนาด
+    draw.text((X_LEFT, y), "ระดับน้ำ ณ อินทร์บุรี", font=font_label, fill=TEXT_COLOR, anchor="ls")
+    y += 55
+    draw.text((X_LEFT, y), level_text, font=font_value_bold, fill=TEXT_COLOR, anchor="ls")
+    y += 75
+    draw.text((X_LEFT, y), f"การระบายน้ำท้ายเขื่อนฯ: {discharge_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ls")
+    y += 60
+    draw.text((X_LEFT, y), f"สภาพอากาศ: {weather_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ls")
+    y += 80
+    draw.text((X_LEFT, y), f"สถานการณ์: {sit_text}", font=font_sit_bold, fill=TEXT_COLOR, anchor="ls")
+    y += 55
+    draw.text((X_LEFT, y), sit_detail, font=font_sit_detail, fill=TEXT_COLOR, anchor="ls")
 
-    # 4. สถานการณ์
-    draw.text((IMAGE_WIDTH / 2, y), f"สถานการณ์: {sit_text}", font=font_sit_bold, fill=TEXT_COLOR, anchor="ms")
-    y += 70
-    draw.text((IMAGE_WIDTH / 2, y), sit_detail, font=font_sit_detail, fill=TEXT_COLOR, anchor="ms")
-    
     image.save("final_report.jpg", quality=95)
 
     dynamic_caption = generate_facebook_caption(water_level, dam_discharge, weather_status)
