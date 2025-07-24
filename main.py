@@ -32,8 +32,8 @@ def get_chao_phraya_dam_data():
         json_string = match.group(1)
         data = json.loads(json_string)
         dam_discharge = data[0]['itc_water']['C13']['storage']
-    dam_discharge_clean = dam_discharge.replace(",", "")
-    return str(int(float(dam_discharge_clean))) if dam_discharge_clean else "-"  if dam_discharge else "-"
+        dam_discharge_clean = dam_discharge.replace(",", "")
+        return str(int(float(dam_discharge_clean))) if dam_discharge_clean else "-"
     except Exception as e:
         print(f"❌ Dam error: {e}")
         return "-"
@@ -66,9 +66,7 @@ def get_weather_status():
         res = requests.get(url, timeout=30)
         data = res.json()
         desc = data["weather"][0]["description"]
-        # ลบบรรทัด emoji ออก หรือเปลี่ยนให้ emoji เป็นค่าว่าง
-        # emoji = "" # หรือจะใช้แบบนี้ก็ได้ ถ้าอยากเก็บตัวแปรไว้
-        return f"{desc.capitalize()}" # แก้ไขตรงนี้ให้ไม่รวม emoji
+        return f"{desc.capitalize()}"
     except Exception as e:
         print(f"❌ Weather fetch error: {e}")
         return "N/A"
@@ -118,7 +116,6 @@ def create_report_image(dam_discharge, water_level, weather_status):
     image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
     print("✅ final_report.jpg created")
 
-    # Add this section to write the status to status.txt
     status_text = f"ระดับน้ำ ณ อินทร์บุรี: {water_value_str} ม. สภาพอากาศ: {weather_status} สถานการณ์: {situation_line} {situation_note}"
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(status_text)
