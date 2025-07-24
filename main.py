@@ -100,8 +100,8 @@ def generate_facebook_caption(water_level, discharge, weather) -> str:
 def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
-    X_LEFT = 120       # ขยับข้อความไปทางซ้ายให้อยู่ในกล่องเหลือง
-    Y_START = 260      # เริ่มต้นให้พอดีด้านบนกล่องเหลือง
+    center_x = IMAGE_WIDTH // 2
+    Y_START = 260
 
     try:
         image = Image.open("background.png").convert("RGB")
@@ -111,7 +111,6 @@ def create_report_image(dam_discharge, water_level, weather_status):
     draw = ImageDraw.Draw(image)
 
     try:
-        # 🔽 ปรับขนาดฟอนต์ให้เล็กลงโดยรวม
         font_label = ImageFont.truetype("Sarabun-Regular.ttf", 34)
         font_value_bold = ImageFont.truetype("Sarabun-Bold.ttf", 46)
         font_value_regular = ImageFont.truetype("Sarabun-Regular.ttf", 34)
@@ -134,24 +133,24 @@ def create_report_image(dam_discharge, water_level, weather_status):
 
     y = Y_START
 
-    # ✅ ชิดซ้ายทั้งหมด พร้อมปรับขนาด
-    draw.text((X_LEFT, y), "ระดับน้ำ ณ อินทร์บุรี", font=font_label, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), "ระดับน้ำ ณ อินทร์บุรี", font=font_label, fill=TEXT_COLOR, anchor="mm")
     y += 55
-    draw.text((X_LEFT, y), level_text, font=font_value_bold, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), level_text, font=font_value_bold, fill=TEXT_COLOR, anchor="mm")
     y += 75
-    draw.text((X_LEFT, y), f"การระบายน้ำท้ายเขื่อนฯ: {discharge_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), f"การระบายน้ำท้ายเขื่อนฯ: {discharge_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="mm")
     y += 60
-    draw.text((X_LEFT, y), f"สภาพอากาศ: {weather_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), f"สภาพอากาศ: {weather_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="mm")
     y += 80
-    draw.text((X_LEFT, y), f"สถานการณ์: {sit_text}", font=font_sit_bold, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), f"สถานการณ์: {sit_text}", font=font_sit_bold, fill=TEXT_COLOR, anchor="mm")
     y += 55
-    draw.text((X_LEFT, y), sit_detail, font=font_sit_detail, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), sit_detail, font=font_sit_detail, fill=TEXT_COLOR, anchor="mm")
 
     image.save("final_report.jpg", quality=95)
 
     dynamic_caption = generate_facebook_caption(water_level, dam_discharge, weather_status)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(dynamic_caption)
+
 
 if __name__ == "__main__":
     load_dotenv()
