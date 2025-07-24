@@ -24,8 +24,9 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run script
         run: python main.py
-      - name: Read caption text
-        run: echo "STATUS_TEXT=$(shuf -n 1 captions.txt)" >> $GITHUB_ENV
+      - name: Read caption text from script output
+        id: caption
+        run: echo "STATUS_TEXT=$(cat status.txt)" >> $GITHUB_ENV
       - name: Post to Facebook via Webhook
         run: |
           curl -X POST -F "file=@final_report.jpg" -F "status=$STATUS_TEXT" ${{ secrets.MAKE_WEBHOOK_URL }}
