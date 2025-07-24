@@ -14,18 +14,33 @@ jobs:
     env:
       OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
       MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_TARGET_ID: ${{ secrets.LINE_TARGET_ID }}
+      
     steps:
       - uses: actions/checkout@v4
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run script
+          
+      - name: Install system dependencies for Playwright
+        run: sudo apt-get update && sudo apt-get install -y libgbm-dev libnss3-dev libatk-bridge2.0-0 libdrm2 libgtk-3-0 libx11-xcb1 libasound2
+        
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Run script to generate report and status
         run: python main.py
-      - name: Read caption text
-        run: echo "STATUS_TEXT=$(shuf -n 1 captions.txt)" >> $GITHUB_ENV
+        
+      - name: Load caption from status.txt
+        run: |
+          echo "STATUS_TEXT=$(cat status.txt | tr '\n' ' ')" >> $GITHUB_ENV
+          
       - name: Post to Facebook via Webhook
         run: |
           curl -X POST -F "file=@final_report.jpg" -F "status=$STATUS_TEXT" ${{ secrets.MAKE_WEBHOOK_URL }}
+
