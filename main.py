@@ -32,7 +32,8 @@ def get_chao_phraya_dam_data():
         json_string = match.group(1)
         data = json.loads(json_string)
         dam_discharge = data[0]['itc_water']['C13']['storage']
-        return str(int(float(dam_discharge))) if dam_discharge else "-"
+    dam_discharge_clean = dam_discharge.replace(",", "")
+    return str(int(float(dam_discharge_clean))) if dam_discharge_clean else "-"  if dam_discharge else "-"
     except Exception as e:
         print(f"❌ Dam error: {e}")
         return "-"
