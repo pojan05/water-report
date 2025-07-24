@@ -25,15 +25,12 @@ jobs:
       - name: Run script to generate image and status
         run: python main.py
 
-      - name: Read caption from status.txt
-        run: |
-          echo 'STATUS_TEXT<<EOF' >> $GITHUB_ENV
-          cat status.txt >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
+      # --- ไม่ต้องมีขั้นตอน Read caption อีกต่อไป ---
 
+      # ✨ แก้ไขขั้นตอนการส่งข้อมูลให้ดึงจากไฟล์โดยตรง ✨
       - name: Send to Make Webhook
         run: |
           curl -X POST \
           -F "file=@final_report.jpg" \
-          -F "status=${{ env.STATUS_TEXT }}" \
+          -F "status=<status.txt" \
           "${{ secrets.MAKE_WEBHOOK_URL }}"
