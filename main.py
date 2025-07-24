@@ -100,56 +100,58 @@ def generate_facebook_caption(water_level, discharge, weather) -> str:
 def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
-    X_LEFT = 100
-    Y_START = 150
+    IMAGE_HEIGHT = 1080
+    center_x = IMAGE_WIDTH // 2
+    Y_START = 330  # เริ่มสูงพอเหมาะในพื้นที่สีครีม
 
     try:
         image = Image.open("background.png").convert("RGB")
     except FileNotFoundError:
-        image = Image.new("RGB", (IMAGE_WIDTH, 1080), "white")
+        image = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), "white")
 
     draw = ImageDraw.Draw(image)
 
     try:
-        font_label = ImageFont.truetype("Sarabun-Regular.ttf", 34)
-        font_value_bold = ImageFont.truetype("Sarabun-Bold.ttf", 46)
-        font_value_regular = ImageFont.truetype("Sarabun-Regular.ttf", 34)
-        font_sit_bold = ImageFont.truetype("Sarabun-Bold.ttf", 40)
-        font_sit_detail = ImageFont.truetype("Sarabun-Regular.ttf", 34)
+        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 46)
+        font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 42)
     except FileNotFoundError:
-        font_label = font_value_bold = font_value_regular = font_sit_bold = font_sit_detail = ImageFont.load_default()
+        font_main = font_sub = ImageFont.load_default()
 
-    level_text = f"{water_level:.2f} ม." if isinstance(water_level, float) else "N/A"
-    discharge_text = f"{dam_discharge} ลบ.ม./วินาที"
-    weather_text = weather_status
+    level_text = f"ระดับน้ำ ณ อินทร์บุรี: {water_level:.2f} ม." if isinstance(water_level, float) else "ระดับน้ำ ณ อินทร์บุรี: N/A"
+    discharge_text = f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที"
+    weather_text = f"สภาพอากาศ: {weather_status}"
 
+    # คำนวณสถานการณ์
     diff = TALING_LEVEL - water_level if isinstance(water_level, float) else 99
     if diff <= 1.5:
-        sit_text, sit_detail = "วิกฤต", "เสี่ยงน้ำล้นตลิ่ง"
+        sit_text = "สถานการณ์: วิกฤต"
+        sit_detail = "เสี่ยงน้ำล้นตลิ่ง"
     elif diff <= 2.5:
-        sit_text, sit_detail = "เฝ้าระวัง", "ระดับน้ำใกล้ตลิ่ง"
+        sit_text = "สถานการณ์: เฝ้าระวัง"
+        sit_detail = "ระดับน้ำใกล้ตลิ่ง"
     else:
-        sit_text, sit_detail = "ปกติ", "น้ำยังห่างตลิ่ง ปลอดภัยจ้า"
+        sit_text = "สถานการณ์: ปกติ"
+        sit_detail = "น้ำยังห่างตลิ่ง ปลอดภัยจ้า"
 
     y = Y_START
+    line_spacing = 65
 
-    draw.text((X_LEFT, y), "ระดับน้ำ ณ อินทร์บุรี", font=font_label, fill=TEXT_COLOR, anchor="ls")
-    y += 55
-    draw.text((X_LEFT, y), level_text, font=font_value_bold, fill=TEXT_COLOR, anchor="ls")
-    y += 75
-    draw.text((X_LEFT, y), f"การระบายน้ำท้ายเขื่อนฯ: {discharge_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ls")
-    y += 60
-    draw.text((X_LEFT, y), f"สภาพอากาศ: {weather_text}", font=font_value_regular, fill=TEXT_COLOR, anchor="ls")
-    y += 80
-    draw.text((X_LEFT, y), f"สถานการณ์: {sit_text}", font=font_sit_bold, fill=TEXT_COLOR, anchor="ls")
-    y += 55
-    draw.text((X_LEFT, y), sit_detail, font=font_sit_detail, fill=TEXT_COLOR, anchor="ls")
+    draw.text((center_x, y), level_text, font=font_main, fill=TEXT_COLOR, anchor="mm")
+    y += line_spacing
+    draw.text((center_x, y), discharge_text, font=font_sub, fill=TEXT_COLOR, anchor="mm")
+    y += line_spacing
+    draw.text((center_x, y), weather_text, font=font_sub, fill=TEXT_COLOR, anchor="mm")
+    y += line_spacing
+    draw.text((center_x, y), sit_text, font=font_main, fill=TEXT_COLOR, anchor="mm")
+    y += line_spacing
+    draw.text((center_x, y), sit_detail, font=font_sub, fill=TEXT_COLOR, anchor="mm")
 
     image.save("final_report.jpg", quality=95)
 
     dynamic_caption = generate_facebook_caption(water_level, dam_discharge, weather_status)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(dynamic_caption)
+
 
 
 
