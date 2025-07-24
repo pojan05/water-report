@@ -1,38 +1,42 @@
-name: Generate and Post Water Report
+name: water-report
 
 on:
-  schedule:
-    - cron: '0 1 * * *'   # 08:00 ICT
-    - cron: '0 5 * * *'   # 12:00 ICT
-    - cron: '0 11 * * *'  # 18:00 ICT
-    - cron: '30 13 * * *' # 20:30 ICT
   workflow_dispatch:
+  schedule:
+    - cron: '0 2,5,8,11 * * *'  # ทำงานวันละ 4 รอบ ตามเวลาประเทศไทย (UTC+7 → UTC-7)
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-      MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run script
-        run: python main.py
 
-      # ✨ แก้ไขส่วนนี้ใหม่ทั้งหมด ✨
-      - name: Read multi-line status text from file
-        id: status_reader
+      - name: Run main script
+        run: python main.py
+        env:
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
+
+      - name: Read caption from status.txt
         run: |
           echo "STATUS_TEXT<<EOF" >> $GITHUB_ENV
           cat status.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: Post to Facebook via Webhook
+      - name: Send to Make Webhook
         run: |
-          curl -X POST -F "file=@final_report.jpg" -F "status=${{ env.STATUS_TEXT }}" ${{ secrets.MAKE_WEBHOOK_URL }}
+          curl -X POST "${{ secrets.MAKE_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d @<(jq -n --arg caption "$STATUS_TEXT" --argfile image final_report.jpg '{
+              caption: $caption,
+              image: "data:image/jpeg;base64," + ($image | @base64)
+            }')
