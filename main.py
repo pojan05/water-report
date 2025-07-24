@@ -1,3 +1,40 @@
+
+def generate_dynamic_caption(water_level: float, dam_discharge: str, weather: str, diff: float) -> str:
+    tags = []
+    lines = []
+
+    if diff > 3:
+        lines.append(f"ระดับน้ำต่ำกว่าตลิ่ง {diff:.2f} ม. ยังไม่มีสัญญาณอันตราย")
+        tags.append("#ปลอดภัยดี")
+    elif 2 < diff <= 3:
+        lines.append(f"น้ำห่างตลิ่ง {diff:.2f} ม. เริ่มเข้าสู่ช่วงเฝ้าระวัง")
+        tags.append("#เฝ้าระวัง")
+    elif 1 < diff <= 2:
+        lines.append(f"ระดับน้ำใกล้ตลิ่ง {diff:.2f} ม. ควรเตรียมพร้อม")
+        tags.append("#เตรียมรับมือ")
+    else:
+        lines.append(f"⚠️ น้ำห่างตลิ่งเพียง {diff:.2f} ม. เสี่ยงต่อภาวะน้ำหลาก")
+        tags.append("#น้ำใกล้ตลิ่ง")
+
+    if dam_discharge != "-" and dam_discharge.isdigit():
+        discharge = int(dam_discharge)
+        if discharge >= 2000:
+            tags.append("#เขื่อนระบายแรง")
+        elif discharge >= 1000:
+            tags.append("#เขื่อนระบายมาก")
+        else:
+            tags.append("#เขื่อนคงที่")
+
+    if "ฝน" in weather:
+        tags.append("#ฝนตกหนัก")
+    elif "เมฆ" in weather:
+        tags.append("#ฟ้าครึ้ม")
+    elif "แจ่มใส" in weather or "ชัดเจน" in weather:
+        tags.append("#อากาศดี")
+
+    tags.append("#อินทร์บุรีรอดมั้ย")
+    return " ".join(lines) + "\n" + " ".join(tags)
+
 import os
 import json
 import requests
@@ -104,6 +141,8 @@ def create_report_image(dam_discharge, water_level, weather_status):
     else:
         dynamic_caption = "#ไม่สามารถดึงข้อมูลระดับน้ำได้ #อินทร์บุรีรอดมั้ย"
 
+    diff = 13.0 - water_level if isinstance(water_level, float) else 0
+    caption = generate_dynamic_caption(water_level, dam_discharge, weather_status, diff)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(dynamic_caption)
 
