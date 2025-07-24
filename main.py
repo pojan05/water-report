@@ -97,7 +97,7 @@ def generate_facebook_caption(water_level, discharge, weather) -> str:
 
     return "\n".join(caption_lines) + "\n\n" + " ".join(hashtags)
 
-# --- ✨ฟังก์ชันสร้างรูปภาพที่ปรับปรุงใหม่ ---
+# ✨ ฟังก์ชันสร้างรูปภาพที่ปรับปรุงใหม่
 def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
@@ -113,7 +113,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     try:
         font_bold_l = ImageFont.truetype("Sarabun-Bold.ttf", 60)
         font_regular_l = ImageFont.truetype("Sarabun-Regular.ttf", 48)
-        font_regular_m = ImageFont.truetype("Sarabun-Regular.ttf", 42)
+        font_regular_m = ImageFont.truetype("Sarabun-Regular.ttf", 42) # ตัวแปรที่ถูกต้องถูกสร้างไว้ที่นี่
     except FileNotFoundError:
         font_bold_l = font_regular_l = font_regular_m = ImageFont.load_default()
 
@@ -142,7 +142,8 @@ def create_report_image(dam_discharge, water_level, weather_status):
     # สถานการณ์
     draw.text((IMAGE_WIDTH / 2, y), f"สถานการณ์: {sit_text}", font=font_bold_l, fill=TEXT_COLOR, anchor="ms")
     y += 80
-    draw.text((IMAGE_WIDTH / 2, y), sit_detail, font=regular_m, fill=TEXT_COLOR, anchor="ms")
+    # แก้ไขจาก regular_m เป็น font_regular_m
+    draw.text((IMAGE_WIDTH / 2, y), sit_detail, font=font_regular_m, fill=TEXT_COLOR, anchor="ms")
     
     image.save("final_report.jpg", quality=95)
 
