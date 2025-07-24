@@ -19,6 +19,9 @@ LINE_TARGET_ID = os.getenv('LINE_TARGET_ID')
 # --- ฟังก์ชัน ---
 
 def get_chao_phraya_dam_data():
+    """
+    ดึงข้อมูลการระบายน้ำจากเขื่อนเจ้าพระยา
+    """
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     print("💧 Fetching Chao Phraya Dam data (JSON method)...")
     try:
@@ -39,12 +42,15 @@ def get_chao_phraya_dam_data():
         return "-"
 
 def get_inburi_bridge_data():
+    """
+    ดึงข้อมูลระดับน้ำที่สะพานอินทร์บุรี
+    """
     url = "https://singburi.thaiwater.net/wl"
     print("💧 Fetching Inburi data using Requests-HTML...")
     try:
         session = HTMLSession()
         r = session.get(url, timeout=30)
-        r.html.render(sleep=10, timeout=60)
+        r.html.render(sleep=10, timeout=60) # รอให้ JS render ข้อมูล
         soup = BeautifulSoup(r.html.html, "html.parser")
         for row in soup.find_all("tr"):
             th = row.find("th", {"scope": "row"})
@@ -58,9 +64,12 @@ def get_inburi_bridge_data():
         return "-"
 
 def get_weather_status():
+    """
+    ดึงข้อมูลสภาพอากาศปัจจุบัน
+    """
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key: return "N/A"
-    lat, lon = "14.9", "100.4"
+    lat, lon = "14.9", "100.4" # พิกัดอินทร์บุรี
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
     try:
         res = requests.get(url, timeout=30)
@@ -72,6 +81,9 @@ def get_weather_status():
         return "N/A"
 
 def classify_water_level_status(water_level: float):
+    """
+    จำแนกสถานการณ์น้ำตามระดับน้ำ
+    """
     diff = TALING_LEVEL - water_level
     if diff > 3:
         return "ปกติ", "น้ำยังห่างตลิ่ง ปลอดภัยจ้า"
@@ -85,6 +97,9 @@ def classify_water_level_status(water_level: float):
         return "ไม่ทราบ", "ข้อมูลผิดพลาดหรือไม่ชัดเจน"
 
 def create_report_image(dam_discharge, water_level, weather_status):
+    """
+    สร้างรูปภาพรายงานสถานการณ์น้ำ
+    """
     image = Image.open("background.png").convert("RGBA")
     draw = ImageDraw.Draw(image)
     water_value_str = f"{water_level:.2f}" if isinstance(water_level, float) else str(water_level)
@@ -116,13 +131,22 @@ def create_report_image(dam_discharge, water_level, weather_status):
     image.convert("RGB").save("final_report.jpg", "JPEG", quality=95)
     print("✅ final_report.jpg created")
 
-    status_text = f"ระดับน้ำ ณ อินทร์บุรี: {water_value_str} ม. สภาพอากาศ: {weather_status} สถานการณ์: {situation_line} {situation_note}"
+    # เขียนแคปชั่นอัตโนมัติแบบฉลาด
+    if isinstance(water_level, float):
+        diff = TALING_LEVEL - water_level
+        dynamic_caption = generate_dynamic_caption(water_level, dam_discharge, weather_status, diff)
+    else:
+        dynamic_caption = "#ไม่สามารถดึงข้อมูลระดับน้ำได้ #อินทร์บุรีรอดมั้ย"
+
     with open("status.txt", "w", encoding="utf-8") as f:
-        f.write(status_text)
-    print("✅ status.txt created")
+        f.write(dynamic_caption)
+    print("✅ status.txt created (dynamic caption)")
 
 
 def send_line_message(message: str):
+    """
+    ส่งข้อความแจ้งเตือนผ่าน LINE
+    """
     if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_TARGET_ID:
         print("⚠️ LINE credentials are not set. Skipping notification.")
         return
@@ -137,6 +161,48 @@ def send_line_message(message: str):
     except Exception as e:
         print(f"❌ Failed to send LINE message: {e}")
 
+def generate_dynamic_caption(water_level: float, dam_discharge: str, weather: str, diff: float) -> str:
+    """
+    สร้างแคปชั่นและ hashtag อัตโนมัติตามสถานการณ์
+    """
+    tags = []
+    lines = []
+
+    # วิเคราะห์ระดับน้ำ
+    if diff > 3:
+        lines.append(f"ระดับน้ำต่ำกว่าตลิ่ง {diff:.2f} ม. ยังไม่มีสัญญาณอันตราย")
+        tags.append("#ปลอดภัยดี")
+    elif 2 < diff <= 3:
+        lines.append(f"น้ำห่างตลิ่ง {diff:.2f} ม. เริ่มเข้าสู่ช่วงเฝ้าระวัง")
+        tags.append("#เฝ้าระวัง")
+    elif 1 < diff <= 2:
+        lines.append(f"ระดับน้ำใกล้ตลิ่ง {diff:.2f} ม. ควรเตรียมพร้อม")
+        tags.append("#เตรียมรับมือ")
+    else:
+        lines.append(f"⚠️ น้ำห่างตลิ่งเพียง {diff:.2f} ม. เสี่ยงต่อภาวะน้ำหลาก")
+        tags.append("#น้ำใกล้ตลิ่ง")
+
+    # วิเคราะห์เขื่อน
+    if dam_discharge != "-" and dam_discharge.isdigit():
+        discharge = int(dam_discharge)
+        if discharge >= 2000:
+            tags.append("#เขื่อนระบายแรง")
+        elif discharge >= 1000:
+            tags.append("#เขื่อนระบายมาก")
+        else:
+            tags.append("#เขื่อนคงที่")
+
+    # วิเคราะห์อากาศ
+    if "ฝน" in weather:
+        tags.append("#ฝนตกหนัก")
+    elif "เมฆ" in weather:
+        tags.append("#ฟ้าครึ้ม")
+    elif "แจ่มใส" in weather or "ชัดเจน" in weather:
+        tags.append("#อากาศดี")
+
+    tags.append("#อินทร์บุรีรอดมั้ย")
+    return " ".join(lines) + "\n" + " ".join(tags)
+
 # --- main ---
 if __name__ == "__main__":
     load_dotenv()
@@ -146,6 +212,7 @@ if __name__ == "__main__":
     weather = get_weather_status()
     alert_messages = []
 
+    # ตรวจสอบการเปลี่ยนแปลงของข้อมูลเขื่อน
     if current_dam_value != "-":
         last_dam_value = ""
         if os.path.exists(LAST_DAM_DATA_FILE):
@@ -160,6 +227,7 @@ if __name__ == "__main__":
             with open(LAST_DAM_DATA_FILE, 'w', encoding='utf-8') as f:
                 f.write(current_dam_value)
 
+    # ตรวจสอบการเปลี่ยนแปลงของระดับน้ำอินทร์บุรี
     if isinstance(current_inburi_level, float):
         last_inburi_level = None
         if os.path.exists(LAST_INBURI_DATA_FILE):
@@ -185,10 +253,12 @@ if __name__ == "__main__":
             f"📍 สถานการณ์น้ำอินทร์บุรี: {situation}\n{note}"
         )
 
+    # ส่งการแจ้งเตือนถ้ามีการเปลี่ยนแปลง
     if alert_messages:
         send_line_message("\n\n".join(alert_messages) + "\n\n✨ สนับสนุนโดย ร้านจิปาถะอินทร์บุรี")
     else:
         print("✅ No significant changes detected. No LINE alert will be sent.")
 
+    # สร้างรูปภาพและไฟล์ status.txt
     create_report_image(current_dam_value, current_inburi_level, weather)
     print("📊 รายงานเสร็จสิ้น")
