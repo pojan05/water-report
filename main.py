@@ -111,7 +111,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     box_bottom = 610
     center_x = (box_left + box_right) // 2
     Y_START = box_top + 20
-    line_spacing = 44
+    line_spacing = 54
 
     # โหลดภาพพื้นหลัง
     try:
