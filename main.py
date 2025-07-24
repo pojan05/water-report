@@ -7,24 +7,21 @@ from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from requests_html import HTMLSession
 
-LAST_DAM_DATA_FILE = 'last_dam_data.txt'
-LAST_INBURI_DATA_FILE = 'last_inburi_data.json'
-NOTIFICATION_THRESHOLD = 0.1
 TALING_LEVEL = 13.0
 
+# --- ฟังก์ชันดึงข้อมูล (ใช้ของเดิม) ---
 def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     try:
         res = requests.get(url, timeout=30)
         res.raise_for_status()
         match = re.search(r'var json_data = (\[.*\]);', res.text)
-        if not match:
-            return "-"
+        if not match: return "-"
         json_string = match.group(1)
         data = json.loads(json_string)
         dam_discharge = data[0]['itc_water']['C13']['storage']
         return str(int(float(dam_discharge.replace(",", "")))) if dam_discharge else "-"
-    except:
+    except Exception:
         return "-"
 
 def get_inburi_bridge_data():
@@ -41,7 +38,7 @@ def get_inburi_bridge_data():
                 if len(tds) >= 2:
                     return float(tds[1].get_text(strip=True))
         return "-"
-    except:
+    except Exception:
         return "-"
 
 def get_weather_status():
@@ -53,63 +50,107 @@ def get_weather_status():
         res = requests.get(url, timeout=30)
         data = res.json()
         return f"{data['weather'][0]['description'].capitalize()}"
-    except:
+    except Exception:
         return "N/A"
 
-def generate_dynamic_caption(water_level: float, dam_discharge: str, weather: str, diff: float) -> str:
-    tags = []
-    lines = []
+# --- ✨ฟังก์ชันสร้าง Caption ที่ปรับปรุงใหม่ ---
+def generate_facebook_caption(water_level, discharge, weather) -> str:
+    caption_lines = []
+    hashtags = []
+    
+    # แปลงข้อมูลเป็นประเภทที่ถูกต้อง
+    try:
+        level = float(water_level)
+    except (ValueError, TypeError):
+        level = 0.0
 
-    if diff > 3:
-        lines.append(f"ระดับน้ำต่ำกว่าตลิ่ง {diff:.2f} ม. ยังไม่มีสัญญาณอันตราย")
-        tags.append("#ปลอดภัยดี")
-    elif 2 < diff <= 3:
-        lines.append(f"น้ำห่างตลิ่ง {diff:.2f} ม. เริ่มเข้าสู่ช่วงเฝ้าระวัง")
-        tags.append("#เฝ้าระวัง")
-    elif 1 < diff <= 2:
-        lines.append(f"ระดับน้ำใกล้ตลิ่ง {diff:.2f} ม. ควรเตรียมพร้อม")
-        tags.append("#เตรียมรับมือ")
+    try:
+        dis_val = int(discharge)
+    except (ValueError, TypeError):
+        dis_val = 0
+
+    if level == 0.0:
+         caption_lines.append("ไม่สามารถดึงข้อมูลระดับน้ำได้ กำลังตรวจสอบ")
+    elif level >= 12.0:
+        caption_lines.append(f"⚠️ น้ำสูงมาก! ระดับน้ำที่ {level:.2f} ม. เฝ้าระวังขั้นสูงสุด")
+        hashtags.append("#น้ำวิกฤต")
+    elif level >= 11.5:
+        caption_lines.append(f"🔶 น้ำใกล้ตลิ่ง! ระดับ {level:.2f} ม. โปรดติดตามใกล้ชิด")
+        hashtags.append("#เฝ้าระวัง")
     else:
-        lines.append(f"⚠️ น้ำห่างตลิ่งเพียง {diff:.2f} ม. เสี่ยงต่อภาวะน้ำหลาก")
-        tags.append("#น้ำใกล้ตลิ่ง")
+        caption_lines.append(f"✅ ระดับน้ำอยู่ที่ {level:.2f} ม. ปลอดภัยดีในขณะนี้")
+        hashtags.append("#ปลอดภัยดี")
 
-    if dam_discharge != "-" and dam_discharge.isdigit():
-        discharge = int(dam_discharge)
-        if discharge >= 2000:
-            tags.append("#เขื่อนระบายแรง")
-        elif discharge >= 1000:
-            tags.append("#เขื่อนระบายมาก")
-        else:
-            tags.append("#เขื่อนคงที่")
+    if dis_val >= 2000:
+        caption_lines.append(f"เขื่อนเจ้าพระยาระบายแรงถึง {dis_val} ลบ.ม./วิ")
+        hashtags.append("#เขื่อนระบายแรง")
+    elif dis_val >= 1000:
+        caption_lines.append(f"เขื่อนยังระบายที่ {dis_val} ลบ.ม./วิ")
+        hashtags.append("#เขื่อนระบายมาก")
 
     if "ฝน" in weather:
-        tags.append("#ฝนตกหนัก")
+        hashtags.append("#ฝนตก")
     elif "เมฆ" in weather:
-        tags.append("#ฟ้าครึ้ม")
-    elif "แจ่มใส" in weather or "ชัดเจน" in weather:
-        tags.append("#อากาศดี")
+        hashtags.append("#ฟ้าครึ้ม")
 
-    tags.append("#อินทร์บุรีรอดมั้ย")
-    return " ".join(lines) + "\n" + " ".join(tags)
+    hashtags.append("#อินทร์บุรีรอดมั้ย")
 
+    return "\n".join(caption_lines) + "\n\n" + " ".join(hashtags)
+
+# --- ✨ฟังก์ชันสร้างรูปภาพที่ปรับปรุงใหม่ ---
 def create_report_image(dam_discharge, water_level, weather_status):
-    image = Image.new("RGB", (800, 600), "white")
+    TEXT_COLOR = "#2c3e50"
+    IMAGE_WIDTH = 1080
+    Y_START = 340
+    
+    try:
+        image = Image.open("background.jpg").convert("RGB")
+    except FileNotFoundError:
+        image = Image.new("RGB", (IMAGE_WIDTH, 1080), "white")
+
     draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-    draw.text((50, 50), "รายงานสถานการณ์น้ำ", font=font, fill="black")
-    image.save("final_report.jpg")
 
-    if isinstance(water_level, float):
-        diff = TALING_LEVEL - water_level
-        dynamic_caption = generate_dynamic_caption(water_level, dam_discharge, weather_status, diff)
+    try:
+        font_bold_l = ImageFont.truetype("Sarabun-Bold.ttf", 60)
+        font_regular_l = ImageFont.truetype("Sarabun-Regular.ttf", 48)
+        font_regular_m = ImageFont.truetype("Sarabun-Regular.ttf", 42)
+    except FileNotFoundError:
+        font_bold_l = font_regular_l = font_regular_m = ImageFont.load_default()
+
+    level_text = f"{water_level:.2f} ม." if isinstance(water_level, float) else "N/A"
+    discharge_text = f"{dam_discharge} ลบ.ม./วินาที"
+    weather_text = weather_status
+    
+    diff = TALING_LEVEL - water_level if isinstance(water_level, float) else 99
+    if diff <= 1.5:
+        sit_text, sit_detail = "วิกฤต", "เสี่ยงน้ำล้นตลิ่ง"
+    elif diff <= 2.5:
+        sit_text, sit_detail = "เฝ้าระวัง", "ระดับน้ำใกล้ตลิ่ง"
     else:
-        dynamic_caption = "#ไม่สามารถดึงข้อมูลระดับน้ำได้ #อินทร์บุรีรอดมั้ย"
+        sit_text, sit_detail = "ปกติ", "น้ำยังห่างตลิ่ง ปลอดภัยจ้า"
 
+    y = Y_START
+    # ระดับน้ำ
+    draw.text((IMAGE_WIDTH / 2, y), f"ระดับน้ำ ณ อินทร์บุรี: {level_text}", font=font_bold_l, fill=TEXT_COLOR, anchor="ms")
+    y += 100
+    # การระบายน้ำ
+    draw.text((IMAGE_WIDTH / 2, y), f"การระบายน้ำท้ายเขื่อนฯ: {discharge_text}", font=font_regular_l, fill=TEXT_COLOR, anchor="ms")
+    y += 100
+    # สภาพอากาศ
+    draw.text((IMAGE_WIDTH / 2, y), f"สภาพอากาศ: {weather_text}", font=font_regular_l, fill=TEXT_COLOR, anchor="ms")
+    y += 110
+    # สถานการณ์
+    draw.text((IMAGE_WIDTH / 2, y), f"สถานการณ์: {sit_text}", font=font_bold_l, fill=TEXT_COLOR, anchor="ms")
+    y += 80
+    draw.text((IMAGE_WIDTH / 2, y), sit_detail, font=regular_m, fill=TEXT_COLOR, anchor="ms")
+    
+    image.save("final_report.jpg", quality=95)
+
+    dynamic_caption = generate_facebook_caption(water_level, dam_discharge, weather_status)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(dynamic_caption)
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv
     load_dotenv()
     dam = get_chao_phraya_dam_data()
     level = get_inburi_bridge_data()
