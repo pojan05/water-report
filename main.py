@@ -1,3 +1,40 @@
+
+def generate_dynamic_caption(water_level: float, dam_discharge: str, weather: str, diff: float) -> str:
+    tags = []
+    lines = []
+
+    if diff > 3:
+        lines.append(f"ระดับน้ำต่ำกว่าตลิ่ง {diff:.2f} ม. ยังไม่มีสัญญาณอันตราย")
+        tags.append("#ปลอดภัยดี")
+    elif 2 < diff <= 3:
+        lines.append(f"น้ำห่างตลิ่ง {diff:.2f} ม. เริ่มเข้าสู่ช่วงเฝ้าระวัง")
+        tags.append("#เฝ้าระวัง")
+    elif 1 < diff <= 2:
+        lines.append(f"ระดับน้ำใกล้ตลิ่ง {diff:.2f} ม. ควรเตรียมพร้อม")
+        tags.append("#เตรียมรับมือ")
+    else:
+        lines.append(f"⚠️ น้ำห่างตลิ่งเพียง {diff:.2f} ม. เสี่ยงต่อภาวะน้ำหลาก")
+        tags.append("#น้ำใกล้ตลิ่ง")
+
+    if dam_discharge != "-" and dam_discharge.isdigit():
+        discharge = int(dam_discharge)
+        if discharge >= 2000:
+            tags.append("#เขื่อนระบายแรง")
+        elif discharge >= 1000:
+            tags.append("#เขื่อนระบายมาก")
+        else:
+            tags.append("#เขื่อนคงที่")
+
+    if "ฝน" in weather:
+        tags.append("#ฝนตกหนัก")
+    elif "เมฆ" in weather:
+        tags.append("#ฟ้าครึ้ม")
+    elif "แจ่มใส" in weather or "ชัดเจน" in weather:
+        tags.append("#อากาศดี")
+
+    tags.append("#อินทร์บุรีรอดมั้ย")
+    return " ".join(lines) + "\n" + " ".join(tags)
+
 import os
 import json
 import requests
@@ -92,32 +129,20 @@ def generate_dynamic_caption(water_level: float, dam_discharge: str, weather: st
 def create_report_image(dam_discharge, water_level, weather_status):
     image = Image.new("RGB", (800, 600), "white")
     draw = ImageDraw.Draw(image)
-
-    try:
-        # 🖋️ แก้ไข: โหลดฟอนต์ TrueType ที่รองรับภาษาไทย (ต้องมีไฟล์ .ttf อยู่ในโฟลเดอร์เดียวกัน)
-        font_path = "THSarabunNew.ttf"
-        font_large = ImageFont.truetype(font_path, 36)
-        font_medium = ImageFont.truetype(font_path, 28)
-    except IOError:
-        # หากหาไฟล์ฟอนต์ไม่เจอ ให้กลับไปใช้ฟอนต์พื้นฐาน
-        print("Font not found, falling back to default font.")
-        font_large = ImageFont.load_default()
-        font_medium = ImageFont.load_default()
-
-    # ✍️ แก้ไข: ปรับปรุงข้อความและตำแหน่งการวาดเพื่อความสวยงาม
-    draw.text((50, 50), f"ระดับน้ำสะพานอินทร์บุรี: {water_level} ม.", font=font_large, fill="black")
-    draw.text((50, 100), f"การระบายน้ำเขื่อนเจ้าพระยา: {dam_discharge} ลบ.ม./วินาที", font=font_medium, fill="black")
-    draw.text((50, 140), f"สภาพอากาศ: {weather_status}", font=font_medium, fill="black")
-
+    font = ImageFont.truetype("Sarabun-Regular.ttf", 36)
+    draw.text((50, 50), f"ระดับน้ำ: {water_level} ม.", font=font, fill="black")
+    draw.text((50, 80), f"การระบายเขื่อน: {dam_discharge} ลบ.ม./วิ", font=font, fill="black")
+    draw.text((50, 110), f"สภาพอากาศ: {weather_status}", font=font, fill="black")
     image.save("final_report.jpg")
 
-    # ส่วนการสร้าง caption ยังคงเหมือนเดิม
     if isinstance(water_level, float):
         diff = TALING_LEVEL - water_level
         dynamic_caption = generate_dynamic_caption(water_level, dam_discharge, weather_status, diff)
     else:
         dynamic_caption = "#ไม่สามารถดึงข้อมูลระดับน้ำได้ #อินทร์บุรีรอดมั้ย"
 
+    diff = 13.0 - water_level if isinstance(water_level, float) else 0
+    caption = generate_dynamic_caption(water_level, dam_discharge, weather_status, diff)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(dynamic_caption)
 
