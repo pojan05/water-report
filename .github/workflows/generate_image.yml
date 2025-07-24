@@ -2,7 +2,10 @@ name: Generate and Post Water Report
 
 on:
   schedule:
-    - cron: '0 2 * * *' # ทุกวัน 09:00 เวลาไทย
+    - cron: '0 1 * * *'   # 08:00 ICT
+    - cron: '0 5 * * *'   # 12:00 ICT
+    - cron: '0 11 * * *'  # 18:00 ICT
+    - cron: '30 13 * * *' # 20:30 ICT
   workflow_dispatch:
 
 jobs:
@@ -11,36 +14,18 @@ jobs:
     env:
       OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
       MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
-      
-      # เพิ่มค่า LINE Secrets เพื่อให้ main.py ดึงไปใช้ได้
-      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-      LINE_TARGET_ID: ${{ secrets.LINE_TARGET_ID }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
-
-      # เพิ่มขั้นตอนการ Cache เพื่อความเร็วและป้องกัน Timeout
-      - name: Cache WebDriver
-        uses: actions/cache@v4
-        with:
-          path: ~/.wdm
-          key: ${{ runner.os }}-webdriver-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-webdriver-
-
+          python-version: '3.11'
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Generate image and status text
+      - name: Run script
         run: python main.py
-
-      - name: Send Report to Make.com
+      - name: Read caption text
+        run: echo "STATUS_TEXT=$(shuf -n 1 captions.txt)" >> $GITHUB_ENV
+      - name: Post to Facebook via Webhook
         run: |
-          STATUS_TEXT=$(cat status.txt)
-          curl -X POST -F "file=@final_report.jpg" -F "status=$STATUS_TEXT" ${{ env.MAKE_WEBHOOK_URL }}
+          curl -X POST -F "file=@final_report.jpg" -F "status=$STATUS_TEXT" ${{ secrets.MAKE_WEBHOOK_URL }}
