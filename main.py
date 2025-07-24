@@ -101,7 +101,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
     center_x = IMAGE_WIDTH // 2
-    Y_START = 260
+    Y_START = 100
 
     try:
         image = Image.open("background.png").convert("RGB")
