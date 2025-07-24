@@ -100,7 +100,7 @@ def generate_facebook_caption(water_level, discharge, weather) -> str:
 def create_report_image(dam_discharge, water_level, weather_status):
     TEXT_COLOR = "#2c3e50"
     IMAGE_WIDTH = 1080
-    Y_START = 320 #ปรับค่าเริ่มต้น
+    Y_START = 350 #ปรับค่าเริ่มต้น
     
     try:
         image = Image.open("background.png").convert("RGB")
