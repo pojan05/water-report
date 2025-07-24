@@ -7,9 +7,6 @@ from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from requests_html import HTMLSession
 
-LAST_DAM_DATA_FILE = 'last_dam_data.txt'
-LAST_INBURI_DATA_FILE = 'last_inburi_data.json'
-NOTIFICATION_THRESHOLD = 0.1
 TALING_LEVEL = 13.0
 
 def get_chao_phraya_dam_data():
@@ -96,7 +93,9 @@ def create_report_image(dam_discharge, water_level, weather_status):
     image = Image.new("RGB", (800, 600), "white")
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
-    draw.text((50, 50), "รายงานสถานการณ์น้ำ", font=font, fill="black")
+    draw.text((50, 50), f"ระดับน้ำ: {water_level} ม.", font=font, fill="black")
+    draw.text((50, 80), f"การระบายเขื่อน: {dam_discharge} ลบ.ม./วิ", font=font, fill="black")
+    draw.text((50, 110), f"สภาพอากาศ: {weather_status}", font=font, fill="black")
     image.save("final_report.jpg")
 
     if isinstance(water_level, float):
@@ -109,7 +108,6 @@ def create_report_image(dam_discharge, water_level, weather_status):
         f.write(dynamic_caption)
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv
     load_dotenv()
     dam = get_chao_phraya_dam_data()
     level = get_inburi_bridge_data()
