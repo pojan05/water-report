@@ -112,8 +112,8 @@ def create_report_image(dam_discharge, water_level, weather_status):
     draw = ImageDraw.Draw(image)
 
     try:
-        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 46)
-        font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 42)
+        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 38)
+        font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 34)
     except FileNotFoundError:
         font_main = font_sub = ImageFont.load_default()
 
@@ -134,7 +134,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
         sit_detail = "น้ำยังห่างตลิ่ง ปลอดภัยจ้า"
 
     y = Y_START
-    line_spacing = 65
+    line_spacing = 150
 
     draw.text((center_x, y), level_text, font=font_main, fill=TEXT_COLOR, anchor="mm")
     y += line_spacing
