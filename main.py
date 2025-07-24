@@ -187,10 +187,11 @@ if __name__ == "__main__":
             f"📍 สถานการณ์น้ำอินทร์บุรี: {situation}\n{note}"
         )
 
-    if alert_messages:
+    # ตัด LINE: โพสต์ Facebook เท่านั้น
+    if False and alert_messages:
         send_line_message("\n\n".join(alert_messages) + "\n\n✨ สนับสนุนโดย ร้านจิปาถะอินทร์บุรี")
     else:
-        print("✅ No significant changes detected. No LINE alert will be sent.")
+        print("✅ No significant changes detected. LINE alert skipped (disabled).")
 
     create_report_image(current_dam_value, current_inburi_level, weather)
     print("📊 รายงานเสร็จสิ้น")
