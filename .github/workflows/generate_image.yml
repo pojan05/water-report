@@ -24,9 +24,15 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run script
         run: python main.py
-      - name: Read caption text from script output
-        id: caption
-        run: echo "STATUS_TEXT=$(cat status.txt)" >> $GITHUB_ENV
+
+      # ✨ แก้ไขส่วนนี้ใหม่ทั้งหมด ✨
+      - name: Read multi-line status text from file
+        id: status_reader
+        run: |
+          echo "STATUS_TEXT<<EOF" >> $GITHUB_ENV
+          cat status.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Post to Facebook via Webhook
         run: |
-          curl -X POST -F "file=@final_report.jpg" -F "status=$STATUS_TEXT" ${{ secrets.MAKE_WEBHOOK_URL }}
+          curl -X POST -F "file=@final_report.jpg" -F "status=${{ env.STATUS_TEXT }}" ${{ secrets.MAKE_WEBHOOK_URL }}
