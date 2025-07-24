@@ -42,16 +42,48 @@ def get_inburi_bridge_data():
         return "-"
 
 def get_weather_status():
+    import os
+    import requests
+
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key: return "N/A"
-    lat, lon = "14.9", "100.4"
+    if not api_key:
+        return "ไม่มีข้อมูลสภาพอากาศ"
+
+    # พิกัดของตำบลอินทร์บุรี อำเภออินทร์บุรี จังหวัดสิงห์บุรี
+    lat, lon = "14.9308", "100.3725"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
+
     try:
         res = requests.get(url, timeout=30)
         data = res.json()
-        return f"{data['weather'][0]['description'].capitalize()}"
-    except Exception:
-        return "N/A"
+        if "weather" not in data or len(data["weather"]) == 0:
+            return "ไม่มีข้อมูลสภาพอากาศ"
+
+        desc_en = data["weather"][0]["main"].lower()
+        desc_detail = data["weather"][0]["description"].lower()
+
+        # Mapping แบบเข้าใจง่าย
+        if "rain" in desc_en:
+            return "ฝนตก"
+        elif "cloud" in desc_en:
+            if "overcast" in desc_detail:
+                return "เมฆครึ้มมาก"
+            elif "scattered" in desc_detail:
+                return "เมฆกระจาย"
+            else:
+                return "เมฆมาก"
+        elif "clear" in desc_en:
+            return "ท้องฟ้าแจ่มใส"
+        elif "storm" in desc_en or "thunderstorm" in desc_en:
+            return "พายุฝนฟ้าคะนอง"
+        elif "mist" in desc_en or "fog" in desc_en:
+            return "หมอกลง"
+        else:
+            return desc_detail.capitalize()
+
+    except Exception as e:
+        return "ดึงข้อมูลอากาศไม่สำเร็จ"
+
 
 # --- ✨ [เพิ่มใหม่] ฟังก์ชันสร้าง Caption ที่ขาดไป ---
 def generate_facebook_caption(water_level, discharge, weather) -> str:
