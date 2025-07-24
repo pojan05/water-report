@@ -1,31 +1,34 @@
-name: water-report
+name: Generate and Post Water Report
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 2,5,8,11 * * *'  # ทำงานวันละ 4 รอบ ตามเวลาประเทศไทย (UTC+7 → UTC-7)
+    - cron: '0 1 * * *'   # 08:00 ICT
+    - cron: '0 5 * * *'   # 12:00 ICT
+    - cron: '0 11 * * *'  # 18:00 ICT
+    - cron: '30 13 * * *' # 20:30 ICT
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+      MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Run main script
+      - name: Run script to generate image and status
         run: python main.py
-        env:
-          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-          MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
 
+      #
+      # ✨ ส่วนที่แก้ไขให้ถูกต้อง ✨
+      # ตรวจสอบให้แน่ใจว่าได้คัดลอกส่วน 'run:' ทั้งบล็อกไปอย่างถูกต้อง
+      #
       - name: Read caption from status.txt
         run: |
           echo "STATUS_TEXT<<EOF" >> $GITHUB_ENV
@@ -34,9 +37,7 @@ jobs:
 
       - name: Send to Make Webhook
         run: |
-          curl -X POST "${{ secrets.MAKE_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d @<(jq -n --arg caption "$STATUS_TEXT" --argfile image final_report.jpg '{
-              caption: $caption,
-              image: "data:image/jpeg;base64," + ($image | @base64)
-            }')
+          curl -X POST \
+          -F "file=@final_report.jpg" \
+          -F "status=${{ env.STATUS_TEXT }}" \
+          ${{ secrets.MAKE_WEBHOOK_URL }}
