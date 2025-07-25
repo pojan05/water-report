@@ -207,3 +207,21 @@ if __name__ == "__main__":
     level = get_inburi_bridge_data()
     weather = get_weather_status()
     create_report_image(dam, level, weather)
+    # --- 🔗 ส่งรูป + caption ไปยัง Make.com ---
+def send_to_make_webhook():
+    try:
+        webhook_url = "https://hook.eu2.make.com/ofw2ggui1pibvdy5f1yfb5quc4czaqy"
+
+        with open("status.txt", "r", encoding="utf-8") as f:
+            caption = f.read()
+
+        with open("final_report.jpg", "rb") as img_file:
+            files = {'photo': img_file}
+            data = {'caption': caption}
+
+            res = requests.post(webhook_url, data=data, files=files)
+            print(f"[✅] Webhook response: {res.status_code} - {res.text}")
+
+    except Exception as e:
+        print(f"[❌] Failed to send webhook: {str(e)}")
+
