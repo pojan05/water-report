@@ -134,7 +134,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
 
     IMAGE_WIDTH = 788
     IMAGE_HEIGHT = 763
-    TEXT_COLOR = "#124696"
+    TEXT_COLOR = "#000000"
 
     # พิกัดกรอบข้อความ (วัดจาก background.png จริง)
     box_left = 60
