@@ -24,19 +24,65 @@ def get_chao_phraya_dam_data():
     except Exception:
         return "-"
 
-def get_inburi_bridge_data():
+def get_inburi_bridge_data() -> float | str:
+    """
+    Scrape the latest water level for the In Buri bridge gauge from ThaiWater.
+
+    The ThaiWater provincial dashboard is highly dynamic and its DOM structure can
+    change over time. The previous implementation assumed the station name was
+    contained within a <th> element with a `scope="row"` attribute and that the
+    second <td> contained the numeric water level. That assumption broke when
+    the site markup changed. This function now takes a more flexible approach:
+
+    * It renders the page using requests_html to execute JavaScript.
+    * It iterates over every table row and checks the combined text of the row
+      for the substring "อินทร์บุรี" (In Buri). This is more tolerant of
+      structural changes because it doesn’t rely on a particular tag hierarchy.
+    * Within the matching row we search for the first cell (td or th) that
+      contains a numeric value with a decimal point or comma. This heuristic
+      picks up the reported water level regardless of the exact column order.
+
+    If parsing fails, the function returns "-" so that the caller can
+    gracefully handle missing data.
+
+    Returns:
+        float or str: The water level in metres if found, otherwise "-".
+    """
     url = "https://singburi.thaiwater.net/wl"
     try:
         session = HTMLSession()
-        r = session.get(url, timeout=30)
-        r.html.render(sleep=10, timeout=60)
+        # Pretend to be a regular browser to avoid simple bot blocks
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            )
+        }
+        r = session.get(url, headers=headers, timeout=30)
+        # Render the page; scrolldown helps load lazy‑loaded tables
+        r.html.render(sleep=5, timeout=90, scrolldown=3)
         soup = BeautifulSoup(r.html.html, "html.parser")
+        # Search every row for the station name
         for row in soup.find_all("tr"):
-            th = row.find("th", {"scope": "row"})
-            if th and "อินทร์บุรี" in th.get_text(strip=True):
-                tds = row.find_all("td")
-                if len(tds) >= 2:
-                    return float(tds[1].get_text(strip=True))
+            row_text = row.get_text(strip=True)
+            if "อินทร์บุรี" not in row_text:
+                continue
+            # Find the first numeric cell in the row. We include both th and td
+            for cell in row.find_all(["td", "th"]):
+                cell_text = cell.get_text(strip=True)
+                # Match numbers with decimal or comma as thousands separator
+                match = re.search(r"[0-9]+[\.,][0-9]+", cell_text)
+                if match:
+                    try:
+                        # Replace commas for decimal conversion
+                        value_str = cell_text.replace(",", "")
+                        return float(value_str)
+                    except ValueError:
+                        continue
+            # Fallback: if we didn't find a numeric cell but we did match the row,
+            # break early since subsequent rows refer to other stations
+            break
         return "-"
     except Exception:
         return "-"
