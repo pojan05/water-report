@@ -24,58 +24,19 @@ def get_chao_phraya_dam_data():
     except Exception:
         return "-"
 
-def get_inburi_bridge_data() -> float | str:
-    """
-    Retrieve the latest water level for the In Buri gauge from ThaiWater.
-
-    The ThaiWater provincial dashboard is rendered client-side and its markup may
-    change over time.  The previous implementation looked up a <th
-    scope="row"> element containing 'อินทร์บุรี' and assumed the second <td>
-    contained the numeric water level.  That approach incorrectly matched other
-    stations whose location included the word อินทร์บุรี and broke when the
-    column order changed.
-
-    This version renders the page using requests_html, then iterates over each
-    row and examines the station name in the first <th>.  Only rows where the
-    station name contains 'อินทร์บุรี' are considered.  The water level is then
-    extracted from the third <td> (index 2), which currently holds the water
-    level value.  A simple numeric pattern match is used to validate the value.
-
-    Returns:
-        float | str: The water level in metres if found, otherwise "-".
-    """
+def get_inburi_bridge_data():
     url = "https://singburi.thaiwater.net/wl"
     try:
         session = HTMLSession()
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            )
-        }
-        r = session.get(url, headers=headers, timeout=30)
-        # Render the page to execute JavaScript and load dynamic content
-        r.html.render(sleep=5, timeout=90, scrolldown=3)
+        r = session.get(url, timeout=30)
+        r.html.render(sleep=10, timeout=60)
         soup = BeautifulSoup(r.html.html, "html.parser")
         for row in soup.find_all("tr"):
-            station_th = row.find("th")
-            if not station_th:
-                continue
-            station_name = station_th.get_text(strip=True)
-            if "อินทร์บุรี" not in station_name:
-                continue
-            tds = row.find_all("td")
-            if len(tds) >= 3:
-                water_text = tds[2].get_text(strip=True)
-                match = re.search(r"[0-9]+[\.,][0-9]+", water_text)
-                if match:
-                    try:
-                        return float(water_text.replace(",", ""))
-                    except ValueError:
-                        pass
-            # If unable to parse, return "-" to indicate missing data
-            return "-"
+            th = row.find("th", {"scope": "row"})
+            if th and "อินทร์บุรี" in th.get_text(strip=True):
+                tds = row.find_all("td")
+                if len(tds) >= 2:
+                    return float(tds[1].get_text(strip=True))
         return "-"
     except Exception:
         return "-"
@@ -204,7 +165,7 @@ def create_report_image(dam_discharge, water_level, weather_status):
     discharge_text = f"การระบายน้ำท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที"
     weather_text = f"สภาพอากาศ: {weather_status}"
 
-    TALING_LEVEL = 13.0
+    # Use the global TALING_LEVEL constant rather than a hard‑coded local value.
     diff = TALING_LEVEL - water_level if isinstance(water_level, float) else 99
     if diff <= 1.5:
         sit_text = "สถานการณ์: วิกฤต"
