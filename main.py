@@ -26,32 +26,27 @@ def get_chao_phraya_dam_data():
 
 def get_inburi_bridge_data() -> float | str:
     """
-    Scrape the latest water level for the In Buri bridge gauge from ThaiWater.
+    Retrieve the latest water level for the In Buri gauge from ThaiWater.
 
-    The ThaiWater provincial dashboard is highly dynamic and its DOM structure can
-    change over time. The previous implementation assumed the station name was
-    contained within a <th> element with a `scope="row"` attribute and that the
-    second <td> contained the numeric water level. That assumption broke when
-    the site markup changed. This function now takes a more flexible approach:
+    The ThaiWater provincial dashboard is rendered client-side and its markup may
+    change over time.  The previous implementation looked up a <th
+    scope="row"> element containing 'อินทร์บุรี' and assumed the second <td>
+    contained the numeric water level.  That approach incorrectly matched other
+    stations whose location included the word อินทร์บุรี and broke when the
+    column order changed.
 
-    * It renders the page using requests_html to execute JavaScript.
-    * It iterates over every table row and checks the combined text of the row
-      for the substring "อินทร์บุรี" (In Buri). This is more tolerant of
-      structural changes because it doesn’t rely on a particular tag hierarchy.
-    * Within the matching row we search for the first cell (td or th) that
-      contains a numeric value with a decimal point or comma. This heuristic
-      picks up the reported water level regardless of the exact column order.
-
-    If parsing fails, the function returns "-" so that the caller can
-    gracefully handle missing data.
+    This version renders the page using requests_html, then iterates over each
+    row and examines the station name in the first <th>.  Only rows where the
+    station name contains 'อินทร์บุรี' are considered.  The water level is then
+    extracted from the third <td> (index 2), which currently holds the water
+    level value.  A simple numeric pattern match is used to validate the value.
 
     Returns:
-        float or str: The water level in metres if found, otherwise "-".
+        float | str: The water level in metres if found, otherwise "-".
     """
     url = "https://singburi.thaiwater.net/wl"
     try:
         session = HTMLSession()
-        # Pretend to be a regular browser to avoid simple bot blocks
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -60,29 +55,27 @@ def get_inburi_bridge_data() -> float | str:
             )
         }
         r = session.get(url, headers=headers, timeout=30)
-        # Render the page; scrolldown helps load lazy‑loaded tables
+        # Render the page to execute JavaScript and load dynamic content
         r.html.render(sleep=5, timeout=90, scrolldown=3)
         soup = BeautifulSoup(r.html.html, "html.parser")
-        # Search every row for the station name
         for row in soup.find_all("tr"):
-            row_text = row.get_text(strip=True)
-            if "อินทร์บุรี" not in row_text:
+            station_th = row.find("th")
+            if not station_th:
                 continue
-            # Find the first numeric cell in the row. We include both th and td
-            for cell in row.find_all(["td", "th"]):
-                cell_text = cell.get_text(strip=True)
-                # Match numbers with decimal or comma as thousands separator
-                match = re.search(r"[0-9]+[\.,][0-9]+", cell_text)
+            station_name = station_th.get_text(strip=True)
+            if "อินทร์บุรี" not in station_name:
+                continue
+            tds = row.find_all("td")
+            if len(tds) >= 3:
+                water_text = tds[2].get_text(strip=True)
+                match = re.search(r"[0-9]+[\.,][0-9]+", water_text)
                 if match:
                     try:
-                        # Replace commas for decimal conversion
-                        value_str = cell_text.replace(",", "")
-                        return float(value_str)
+                        return float(water_text.replace(",", ""))
                     except ValueError:
-                        continue
-            # Fallback: if we didn't find a numeric cell but we did match the row,
-            # break early since subsequent rows refer to other stations
-            break
+                        pass
+            # If unable to parse, return "-" to indicate missing data
+            return "-"
         return "-"
     except Exception:
         return "-"
