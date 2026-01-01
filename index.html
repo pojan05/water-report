@@ -3,47 +3,164 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>รายงานสถานการณ์น้ำอินทร์บุรี</title>
+    <title>สถานการณ์น้ำและฝุ่น อินทร์บุรี</title>
     <meta http-equiv="refresh" content="1800">
     <style>
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            flex-direction: column; 
             background-color: #f0f2f5; 
             margin: 0;
             padding: 20px;
+            color: #333;
         }
         .container {
-            max-width: 800px;
-            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
         }
-        img { 
+        
+        /* สไตล์สำหรับการ์ดข้อมูล */
+        .card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        /* ส่วนแสดงภาพรายงานน้ำ (คงเดิมไว้) */
+        img#report-image { 
             max-width: 100%; 
             height: auto; 
-            border-radius: 12px; 
-            box-shadow: 0 6px 12px rgba(0,0,0,0.1); 
+            border-radius: 8px; 
+            border: 1px solid #ddd;
         }
-        h1 { color: #1c1e21; }
-        p { color: #606770; }
+
+        /* ส่วนแสดงผล PM2.5 */
+        .pm25-display {
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            transition: background-color 0.5s ease;
+        }
+        
+        .pm25-value {
+            font-size: 3.5em;
+            font-weight: bold;
+            line-height: 1;
+        }
+        .pm25-unit {
+            font-size: 1rem;
+            opacity: 0.8;
+        }
+        .pm25-status {
+            font-size: 1.5em;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .health-advice {
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+        /* สีตามระดับความรุนแรง */
+        .level-good { background: linear-gradient(135deg, #28a745, #20c997); } /* เขียว */
+        .level-moderate { background: linear-gradient(135deg, #ffc107, #fd7e14); color: #333; } /* เหลือง */
+        .level-unhealthy { background: linear-gradient(135deg, #fd7e14, #dc3545); } /* ส้ม */
+        .level-danger { background: linear-gradient(135deg, #dc3545, #721c24); } /* แดง */
+
+        h1 { margin-top: 0; font-size: 1.5em; }
+        .timestamp { font-size: 0.8em; color: #888; margin-bottom: 15px; display: block; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>รายงานสถานการณ์น้ำล่าสุด</h1>
-        <img id="report-image" src="final_report.jpg" alt="กำลังโหลดรายงานสถานการณ์น้ำ...">
-        <p>หน้านี้จะอัปเดตข้อมูลอัตโนมัติทุกชั่วโมง</p>
+        
+        <div class="card">
+            <h1>สถานการณ์ฝุ่น PM 2.5 อินทร์บุรี</h1>
+            <span class="timestamp" id="current-time"></span>
+            
+            <div id="pm25-box" class="pm25-display level-good">
+                <div class="pm25-value" id="pm25-value">--</div>
+                <span class="pm25-unit">µg/m³</span>
+                <div class="pm25-status" id="pm25-text">กำลังโหลด...</div>
+                
+                <div class="health-advice" id="pm25-advice">
+                    </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h1>รายงานระดับน้ำ</h1>
+            <img id="report-image" src="final_report.jpg" alt="กำลังโหลดรายงานสถานการณ์น้ำ...">
+            <p style="font-size: 0.8em; color: #666; margin-top: 10px;">ภาพอัปเดตอัตโนมัติทุก 1 นาที</p>
+        </div>
+
     </div>
 
     <script>
-        // ทำให้รูปภาพรีเฟรชตัวเองโดยไม่ต้องโหลดทั้งหน้าใหม่
+        // --- ส่วนจัดการเวลา ---
+        function updateTime() {
+            const now = new Date();
+            const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            document.getElementById('current-time').innerText = "ข้อมูล ณ " + now.toLocaleDateString('th-TH', options);
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // --- ส่วนจัดการภาพรายงานน้ำ (Code เดิม) ---
         const image = document.getElementById('report-image');
         const originalSrc = image.src;
         setInterval(() => {
             image.src = originalSrc.split('?')[0] + '?' + new Date().getTime();
-        }, 60000); // รีเฟรชรูปทุก 1 นาที
+        }, 60000);
+
+        // --- ส่วนจัดการความฉลาดของ PM 2.5 ---
+        
+        // ** ตรงนี้คือค่าสมมติ (Simulation) **
+        // ในการใช้งานจริง คุณอาจดึงค่าจาก API หรือแก้ตัวเลขตรงนี้
+        // ลองเปลี่ยนตัวเลขนี้เพื่อดูสีที่เปลี่ยนไป (เช่น 35, 80, 150, 217.8)
+        let currentPM25 = 217.8; 
+
+        function updateAirQuality(value) {
+            const box = document.getElementById('pm25-box');
+            const valDisplay = document.getElementById('pm25-value');
+            const textDisplay = document.getElementById('pm25-text');
+            const adviceDisplay = document.getElementById('pm25-advice');
+
+            valDisplay.innerText = value;
+
+            // ล้างคลาสสีเดิมออก
+            box.classList.remove('level-good', 'level-moderate', 'level-unhealthy', 'level-danger');
+
+            // เงื่อนไขความฉลาด (Logic)
+            if (value <= 50) {
+                box.classList.add('level-good');
+                textDisplay.innerText = "อากาศดี";
+                adviceDisplay.innerText = "✅ เหมาะสำหรับกิจกรรมกลางแจ้ง ท่องเที่ยวได้ตามปกติ";
+            } else if (value <= 100) {
+                box.classList.add('level-moderate');
+                textDisplay.innerText = "เริ่มมีผลกระทบ";
+                adviceDisplay.innerText = "⚠️ ควรลดระยะเวลาการทำกิจกรรมกลางแจ้ง";
+            } else if (value <= 200) {
+                box.classList.add('level-unhealthy');
+                textDisplay.innerText = "มีผลกระทบต่อสุขภาพ";
+                adviceDisplay.innerText = "😷 ควรสวมหน้ากากป้องกัน และหลีกเลี่ยงกิจกรรมกลางแจ้ง";
+            } else {
+                // กรณีเกิน 200 (เหมือนในรูปตัวอย่าง)
+                box.classList.add('level-danger');
+                textDisplay.innerText = "อันตรายมาก";
+                adviceDisplay.innerText = "⛔️ อันตรายต่อระบบทางเดินหายใจอย่างรุนแรง ควรหลีกเลี่ยงกิจกรรมกลางแจ้งทั้งหมด";
+            }
+        }
+
+        // เรียกใช้งานฟังก์ชัน
+        updateAirQuality(currentPM25);
+
     </script>
 </body>
 </html>
