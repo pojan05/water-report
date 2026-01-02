@@ -2,12 +2,87 @@ import os
 import json
 import requests
 import re
+import random
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from requests_html import HTMLSession
 
-# --- 1. ฟังก์ชันดึงข้อมูลเขื่อน (คงเดิม) ---
+# --- 1. คลังคำพูดแจ้งเตือนฝุ่นแบบฉลาด (Smart Messages) ---
+PM25_MESSAGES = {
+    "very_good": [ # 0 - 15 (ฟ้า)
+        {"label": "อากาศดีมาก 💙", "desc": "ฟ้าใสปิ๊ง! สูดอากาศได้เต็มปอด", "advice": "เหมาะมากที่จะไปวิ่งออกกำลังกาย หรือตากผ้าครับ"},
+        {"label": "สดชื่นสุดๆ 🌬️", "desc": "ลมพัดเย็นสบาย ไร้ฝุ่นกวนใจ", "advice": "เปิดหน้าต่างรับลมได้เลย อากาศดีแบบนี้หายากนะ"},
+        {"label": "อากาศคลีนๆ ✨", "desc": "ไม่มีฝุ่นเลย ปอดคุณยิ้มได้", "advice": "ใครดองงานซักผ้าไว้ รีบจัดเลยครับ แดดดีลมดี!"}
+    ],
+    "good": [ # 15.1 - 25 (เขียว)
+        {"label": "อากาศดี 💚", "desc": "ยังโอเค! ใช้ชีวิตได้ตามปกติ", "advice": "เที่ยวนอกบ้านได้สบายๆ แต่อย่าลืมดื่มน้ำเยอะๆ นะ"},
+        {"label": "เขียวผ่านตลอด ✅", "desc": "ฝุ่นนิดเดียว แทบไม่รู้สึก", "advice": "ทำกิจกรรมกลางแจ้งได้ครับ วันนี้อากาศเป็นมิตร"},
+        {"label": "สบายๆ หายห่วง 😊", "desc": "คุณภาพอากาศอยู่ในเกณฑ์ดี", "advice": "ใช้ชีวิตให้มีความสุขครับ วันนี้ปอดไม่ต้องทำงานหนัก"}
+    ],
+    "moderate": [ # 25.1 - 37.5 (เหลือง)
+        {"label": "เริ่มขุ่นๆ 💛", "desc": "ฟ้าเริ่มมัว ไม่ใช่หมอกแต่คือฝุ่น", "advice": "กลุ่มเสี่ยง (เด็ก/คนแก่) ระวังหน่อยนะ #งดเผาขยะ ช่วยกันครับ"},
+        {"label": "การ์ดอย่าตก 🚧", "desc": "ฝุ่นเริ่มมาเยือน จมูกไวเริ่มรู้เรื่อง", "advice": "ใครแพ้ง่าย เลี่ยงที่โล่งแจ้งนิดนึง ใส่หน้ากากกันไว้ดีกว่า"},
+        {"label": "เริ่มหนาตา 🌫️", "desc": "มองไปไกลๆ เริ่มไม่ชัดแล้วนะ", "advice": "ลดการใช้รถยนต์ถ้าทำได้ และช่วยกันสอดส่องคนเผาหญ้าครับ"}
+    ],
+    "unhealthy": [ # 37.6 - 75 (ส้ม)
+        {"label": "เริ่มแย่แล้ว 🧡", "desc": "แสบจมูก แสบคอ ฝุ่นเยอะชัดเจน", "advice": "⚠️ ใส่หน้ากากอนามัยทันทีที่ออกนอกบ้าน อย่าประมาท!"},
+        {"label": "เตือนภัยฝุ่น 😷", "desc": "หายใจแล้วรู้สึกไม่โล่ง คอแห้ง", "advice": "งดวิ่งกลางแจ้งเปลี่ยนไปออกกำลังกายในร่มแทนนะ"},
+        {"label": "ฝุ่นบุกหนัก 🌪️", "desc": "สภาพอากาศปิด ฝุ่นสะสมตัวสูง", "advice": "ปิดหน้าต่างให้มิดชิด! ใครเป็นภูมิแพ้เตรียมยาไว้เลย"}
+    ],
+    "hazardous": [ # > 75 (แดง)
+        {"label": "วิกฤต! แดงเถือก ❤️", "desc": "อันตรายมาก! ฝุ่นหนาจนน่ากลัว", "advice": "❌ ห้ามออกกำลังกายกลางแจ้งเด็ดขาด! ต้องใส่ N95 เท่านั้น"},
+        {"label": "ฉุกเฉินอากาศพิษ ☠️", "desc": "มองไม่เห็นตึก! หายใจแล้วอันตราย", "advice": "อยู่แต่ในห้องแอร์/ห้องปลอดฝุ่น ปกป้องเด็กและคนชราด่วน!"},
+        {"label": "ไม่ไหวบอกไหว 🆘", "desc": "ค่าฝุ่นพุ่งทะลุเพดาน อันตรายต่อทุกคน", "advice": "งดออกจากบ้านถ้าไม่จำเป็น! นี่คือคำเตือนระดับสูงสุด"}
+    ]
+}
+
+# --- 2. ฟังก์ชันวิเคราะห์คุณภาพอากาศ (เลือกคำพูด + สี) ---
+def analyze_air_quality(pm25_value):
+    try:
+        val = float(pm25_value)
+    except:
+        return {
+            "level": "Unsure",
+            "label": "ไม่มีข้อมูล",
+            "desc": "ระบบกำลังตรวจสอบ",
+            "advice": "รอสักครู่นะครับ",
+            "color": "#808080"
+        }
+
+    selected_key = ""
+    color_code = ""
+    
+    # เกณฑ์ PM2.5 และการเลือกสี
+    if val <= 15:
+        selected_key = "very_good"
+        color_code = "#0099FF" # ฟ้าสดใส
+    elif val <= 25:
+        selected_key = "good"
+        color_code = "#00C853" # เขียว
+    elif val <= 37.5:
+        selected_key = "moderate"
+        color_code = "#FFAB00" # เหลืองเข้ม
+    elif val <= 75:
+        selected_key = "unhealthy"
+        color_code = "#FF6D00" # ส้ม
+    else:
+        selected_key = "hazardous"
+        color_code = "#D50000" # แดงเข้ม
+
+    # สุ่มเลือกข้อความ 1 ชุดจากคลังคำพูด
+    msg = random.choice(PM25_MESSAGES[selected_key])
+
+    return {
+        "level": selected_key,
+        "label": msg['label'],
+        "desc": msg['desc'],
+        "advice": msg['advice'],
+        "color": color_code
+    }
+
+# --- 3. ฟังก์ชันดึงข้อมูลต่างๆ (คงเดิมและปรับปรุง) ---
+
 def get_chao_phraya_dam_data():
     url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
     try:
@@ -22,28 +97,19 @@ def get_chao_phraya_dam_data():
     except Exception:
         return "-"
 
-# --- 2. ฟังก์ชันดึงระดับน้ำอินทร์บุรี (คงเดิม) ---
 def get_inburi_bridge_data() -> float | str:
     url = "https://singburi.thaiwater.net/wl"
     try:
         session = HTMLSession()
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            )
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
         r = session.get(url, headers=headers, timeout=30)
         r.html.render(sleep=5, timeout=90, scrolldown=3)
         soup = BeautifulSoup(r.html.html, "html.parser")
         for row in soup.find_all("tr"):
             station_th = row.find("th")
-            if not station_th:
-                continue
+            if not station_th: continue
             station_name = station_th.get_text(strip=True)
-            if "อินทร์บุรี" not in station_name:
-                continue
+            if "อินทร์บุรี" not in station_name: continue
             tds = row.find_all("td")
             if len(tds) >= 3:
                 water_text = tds[2].get_text(strip=True)
@@ -51,151 +117,110 @@ def get_inburi_bridge_data() -> float | str:
                 if match:
                     try:
                         return float(water_text.replace(",", ""))
-                    except ValueError:
-                        pass
+                    except ValueError: pass
             return "-"
         return "-"
     except Exception:
         return "-"
 
-# --- 3. ฟังก์ชันดึงสภาพอากาศ (คงเดิม) ---
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key:
-        return "ไม่มีข้อมูลสภาพอากาศ"
-
-    # พิกัดของตำบลอินทร์บุรี
+    if not api_key: return "ไม่มีข้อมูลสภาพอากาศ"
     lat, lon = "14.9308", "100.3725"
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&lang=th&units=metric"
-
     try:
         res = requests.get(url, timeout=30)
         data = res.json()
-        if "weather" not in data or len(data["weather"]) == 0:
-            return "ไม่มีข้อมูลสภาพอากาศ"
-
+        if "weather" not in data or len(data["weather"]) == 0: return "ไม่มีข้อมูลสภาพอากาศ"
         desc_en = data["weather"][0]["main"].lower()
         desc_detail = data["weather"][0]["description"].lower()
-
-        if "rain" in desc_en:
-            return "ฝนตก"
+        if "rain" in desc_en: return "ฝนตก"
         elif "cloud" in desc_en:
-            if "overcast" in desc_detail:
-                return "เมฆครึ้มมาก"
-            elif "scattered" in desc_detail:
-                return "เมฆกระจาย"
-            else:
-                return "เมฆมาก"
-        elif "clear" in desc_en:
-            return "ท้องฟ้าแจ่มใส"
-        elif "storm" in desc_en or "thunderstorm" in desc_en:
-            return "พายุฝนฟ้าคะนอง"
-        elif "mist" in desc_en or "fog" in desc_en:
-            return "หมอกลง"
-        else:
-            return desc_detail.capitalize()
+            if "overcast" in desc_detail: return "เมฆครึ้มมาก"
+            elif "scattered" in desc_detail: return "เมฆกระจาย"
+            else: return "เมฆมาก"
+        elif "clear" in desc_en: return "ท้องฟ้าแจ่มใส"
+        elif "storm" in desc_en or "thunderstorm" in desc_en: return "พายุฝนฟ้าคะนอง"
+        elif "mist" in desc_en or "fog" in desc_en: return "หมอกลง"
+        else: return desc_detail.capitalize()
+    except Exception: return "ดึงข้อมูลอากาศไม่สำเร็จ"
 
-    except Exception:
-        return "ดึงข้อมูลอากาศไม่สำเร็จ"
-
-# --- ✨ [เพิ่มใหม่] ฟังก์ชันดึงค่าฝุ่น PM2.5 เฉพาะจุด (อินทร์บุรี) ---
 def get_pm25_data():
-    """
-    ดึงค่า PM2.5 จากพิกัดตำบลอินทร์บุรีโดยตรง (ใช้ OpenWeather Air Pollution API)
-    แม่นยำกว่าการใช้สถานีจังหวัดเพราะระบุ Lat/Lon ของตำบล
-    """
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
-        return ("-", "ไม่มีข้อมูล")
+        return ("-", analyze_air_quality(None))
 
-    # พิกัด ต.อินทร์บุรี อ.อินทร์บุรี จ.สิงห์บุรี (ตรงกับฟังก์ชัน Weather)
     lat, lon = "14.9308", "100.3725"
     url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={api_key}"
 
     try:
         res = requests.get(url, timeout=20)
         data = res.json()
-        # ดึงค่า PM2.5 (หน่วย μg/m3)
         pm25 = data['list'][0]['components']['pm2_5']
-        
-        # แปลงเกณฑ์ตามมาตรฐานประเทศไทย (กรมควบคุมมลพิษ)
-        # 0-15 ฟ้า(ดีมาก), 15.1-25 เขียว(ดี), 25.1-37.5 เหลือง(ปานกลาง), 
-        # 37.6-75 ส้ม(เริ่มมีผล), >75 แดง(มีผลกระทบ)
-        if pm25 <= 15:
-            quality = "อากาศดีมาก"
-        elif pm25 <= 25:
-            quality = "อากาศดี"
-        elif pm25 <= 37.5:
-            quality = "ปานกลาง"
-        elif pm25 <= 75:
-            quality = "เริ่มมีผลกระทบฯ"
-        else:
-            quality = "มีผลกระทบต่อสุขภาพ"
-            
-        return (f"{pm25:.1f}", quality)
+        # คืนค่าตัวเลข และ ผลวิเคราะห์ (Smart Data)
+        return (f"{pm25:.1f}", analyze_air_quality(pm25))
     except Exception as e:
         print(f"Error fetching PM2.5: {e}")
-        return ("-", "รออัปเดต")
+        return ("-", analyze_air_quality(None))
 
-# --- ✨ [แก้ไข] ฟังก์ชันสร้าง Caption (เปลี่ยนจากแจ้งเตือนน้ำ เป็นแจ้งฝุ่น) ---
-def generate_facebook_caption(water_level, discharge, weather, pm25_val, pm25_quality) -> str:
-    caption_lines = []
-    hashtags = []
+# --- 4. ฟังก์ชันสร้าง Caption Facebook ---
+def generate_facebook_caption(water_level, discharge, weather, pm25_val, pm25_info) -> str:
+    caption = []
     
-    try:
-        level = float(water_level)
-    except (ValueError, TypeError):
-        level = 0.0
-
-    try:
-        dis_val = int(discharge)
-    except (ValueError, TypeError):
-        dis_val = 0
-
-    # บรรทัด 1: ระดับน้ำ
-    if level == 0.0:
-         caption_lines.append("กำลังตรวจสอบระดับน้ำ")
+    # ส่วนหัวข้อ (Headlines)
+    if pm25_info['level'] in ['unhealthy', 'hazardous']:
+         caption.append(f"🚨 เตือนภัยฝุ่น! {pm25_info['desc']}")
     else:
-        caption_lines.append(f"📊 ระดับน้ำ: {level:.2f} ม.")
-    
-    # บรรทัด 2: การระบายน้ำ
-    if dis_val > 0:
-        caption_lines.append(f"💧 เขื่อนระบาย: {dis_val} ลบ.ม./วิ")
+         caption.append(f"📅 อัปเดตสถานการณ์น้ำและฝุ่น อินทร์บุรี")
 
-    # บรรทัด 3: ฝุ่น PM2.5
+    caption.append("-----------------------------")
+    
+    # ข้อมูลฝุ่น
     if pm25_val != "-":
-        caption_lines.append(f"😷 PM2.5 อินทร์บุรี: {pm25_val} μg/m³ ({pm25_quality})")
-        
-        # เพิ่ม Hashtag ตามความรุนแรงของฝุ่น
-        if "เริ่มมีผล" in pm25_quality or "มีผลกระทบ" in pm25_quality:
-            hashtags.append("#ฝุ่นเยอะ")
-            hashtags.append("#ใส่หน้ากากด้วยนะ")
-        elif "ดี" in pm25_quality:
-            hashtags.append("#อากาศดี")
+        caption.append(f"😷 ค่าฝุ่น PM2.5: {pm25_val} μg/m³")
+        caption.append(f"สถานะ: {pm25_info['label']}")
+        caption.append(f"💡 คำแนะนำ: {pm25_info['advice']}")
     
-    # เพิ่ม Hashtag พื้นฐาน
-    hashtags.append("#อินทร์บุรี")
-    hashtags.append("#ระดับน้ำเจ้าพระยา")
+    caption.append("") 
+    
+    # ข้อมูลน้ำ
+    try:
+        lvl = float(water_level)
+        caption.append(f"🌊 ระดับน้ำเจ้าพระยา: {lvl:.2f} ม.")
+    except:
+        caption.append(f"🌊 ระดับน้ำเจ้าพระยา: รอตรวจสอบ")
+        
+    if str(discharge) != "-":
+        caption.append(f"💧 เขื่อนระบาย: {discharge} ลบ.ม./วิ")
+    
+    caption.append(f"☁️ สภาพอากาศ: {weather}")
+    
+    # Hashtags
+    tags = ["#อินทร์บุรี", "#PM25", "#ระดับน้ำเจ้าพระยา"]
+    if pm25_info['level'] in ['unhealthy', 'hazardous']:
+        tags.append("#ฝุ่นเยอะมาก")
+        tags.append("#ดูแลสุขภาพด้วยนะ")
+    elif pm25_info['level'] in ['very_good', 'good']:
+        tags.append("#อากาศดี")
+        tags.append("#น่าเที่ยว")
+    
+    return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-    return "\n".join(caption_lines) + "\n\n" + " ".join(hashtags)
-
-# --- ✨ [แก้ไข] ฟังก์ชันสร้างรูปภาพ (เอาสถานการณ์น้ำออก ใส่ PM2.5 แทน) ---
-def create_report_image(dam_discharge, water_level, weather_status, pm25_data):
+# --- 5. ฟังก์ชันสร้างรูปภาพ ---
+def create_report_image(dam_discharge, water_level, weather_status, pm25_data_tuple):
     IMAGE_WIDTH = 788
     IMAGE_HEIGHT = 763
     TEXT_COLOR = "#000000"
 
-    pm25_val, pm25_quality = pm25_data
+    pm25_val, pm25_info = pm25_data_tuple # แตกตัวแปรออกมา
 
-    # พิกัดกรอบข้อความ
     box_left = 60
     box_right = IMAGE_WIDTH - 60
     box_top = 170
     center_x = (box_left + box_right) // 2
     
-    # เริ่มต้นเขียนข้อความที่ตำแหน่ง Y
     Y_START = box_top + 40 
-    line_spacing = 70  # เพิ่มระยะห่างบรรทัดนิดหน่อยให้อ่านง่าย
+    line_spacing = 70 
 
     try:
         image = Image.open("background.png").convert("RGB")
@@ -205,9 +230,9 @@ def create_report_image(dam_discharge, water_level, weather_status, pm25_data):
     draw = ImageDraw.Draw(image)
 
     try:
-        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 44) # เพิ่มขนาดฟอนต์หัวข้อ
+        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 44)
         font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 38)
-        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 48) # ฟอนต์ใหญ่สำหรับค่าฝุ่น
+        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 48)
     except:
         font_main = font_sub = font_pm = ImageFont.load_default()
 
@@ -216,9 +241,10 @@ def create_report_image(dam_discharge, water_level, weather_status, pm25_data):
     discharge_text = f"ท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วินาที"
     weather_text = f"สภาพอากาศ: {weather_status}"
     
-    # ข้อความฝุ่น (มาแทนที่ สถานการณ์เฝ้าระวัง)
+    # ข้อความฝุ่นจาก Smart Info
     pm_label_text = f"ฝุ่น PM2.5 (ต.อินทร์บุรี):"
-    pm_value_text = f"{pm25_val} μg/m³ ({pm25_quality})"
+    pm_value_text = f"{pm25_val} μg/m³"
+    pm_desc_text = pm25_info['label'] # เช่น "วิกฤต! แดงเถือก ❤️"
 
     # วาดข้อความลงภาพ
     y = Y_START
@@ -233,36 +259,35 @@ def create_report_image(dam_discharge, water_level, weather_status, pm25_data):
     
     # 3. สภาพอากาศ
     draw.text((center_x, y), weather_text, font=font_sub, fill=TEXT_COLOR, anchor="mm")
-    y += line_spacing + 10 # เว้นวรรคเยอะหน่อยก่อนเข้าเรื่องฝุ่น
+    y += line_spacing + 10 
 
     # 4. หัวข้อฝุ่น
     draw.text((center_x, y), pm_label_text, font=font_main, fill="#444444", anchor="mm")
     y += line_spacing
     
-    # 5. ค่าฝุ่น (เปลี่ยนสีตามความรุนแรง)
-    pm_color = "#000000" # Default ดำ
-    if pm25_quality == "อากาศดีมาก": pm_color = "#0099cc" # ฟ้า
-    elif pm25_quality == "อากาศดี": pm_color = "#00b050" # เขียว
-    elif pm25_quality == "ปานกลาง": pm_color = "#e6b800" # เหลืองเข้ม
-    elif "เริ่มมีผล" in pm25_quality: pm_color = "#ff6600" # ส้ม
-    elif "มีผลกระทบ" in pm25_quality: pm_color = "#cc0000" # แดง
-
-    draw.text((center_x, y), pm_value_text, font=font_pm, fill=pm_color, anchor="mm")
+    # 5. ค่าฝุ่น (ใส่สีตามระดับความรุนแรง)
+    draw.text((center_x, y), pm_value_text, font=font_pm, fill=pm25_info['color'], anchor="mm")
+    y += line_spacing
+    
+    # 6. คำอธิบายสั้นๆ (ใส่สีเหมือนกัน)
+    draw.text((center_x, y), pm_desc_text, font=font_sub, fill=pm25_info['color'], anchor="mm")
 
     # บันทึกภาพ
     image.save("final_report.jpg", quality=95)
 
     # สร้าง Caption และบันทึก
-    dynamic_caption = generate_facebook_caption(water_level, dam_discharge, weather_status, pm25_val, pm25_quality)
+    dynamic_caption = generate_facebook_caption(water_level, dam_discharge, weather_status, pm25_val, pm25_info)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(dynamic_caption)
     
-    print(f"Report Generated: Level={water_level}, PM2.5={pm25_val}")
+    print(f"Report Generated: Level={water_level}, PM2.5={pm25_val}, Info={pm25_info['label']}")
 
+# --- Main Execution ---
 if __name__ == "__main__":
     load_dotenv()
     dam = get_chao_phraya_dam_data()
     level = get_inburi_bridge_data()
     weather = get_weather_status()
-    pm25 = get_pm25_data() # ดึงค่าฝุ่น
-    create_report_image(dam, level, weather, pm25)
+    pm25_data = get_pm25_data() # ดึงค่าฝุ่น + Smart Info
+    
+    create_report_image(dam, level, weather, pm25_data)
