@@ -3,10 +3,11 @@ import json
 import requests
 import re
 import random
+from datetime import datetime
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
-# Suppress InsecureRequestWarning
+# ปิดแจ้งเตือน SSL (กรณีใช้ GISTDA)
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -76,13 +77,13 @@ def analyze_air_quality(pm25_value):
     if val > STANDARD_VAL:
         times = val / STANDARD_VAL
         if times >= 2:
-            compare_text = f"🚨 เกินเกณฑ์มาตรฐาน {times:.1f} เท่า! (อันตรายมาก)"
+            compare_text = f"🚨 เกินมาตรฐาน {times:.1f} เท่า!"
         else:
             diff = val - STANDARD_VAL
-            compare_text = f"⚠️ เกินเกณฑ์มาตรฐานมา {diff:.1f} หน่วย"
+            compare_text = f"⚠️ เกินมาตรฐาน {diff:.1f}"
     else:
         percent = (val / STANDARD_VAL) * 100
-        compare_text = f"✅ อยู่ในเกณฑ์ปลอดภัย ({int(percent)}% ของขีดจำกัด)"
+        compare_text = f"✅ ปลอดภัย ({int(percent)}%)"
 
     msg = random.choice(PM25_MESSAGES[selected_key])
 
@@ -95,30 +96,58 @@ def analyze_air_quality(pm25_value):
         "color": color_code
     }
 
-# --- 3. ฟังก์ชันดึงข้อมูล (โฟกัสเฉพาะฝุ่นและอากาศ) ---
+# --- 3. ฟังก์ชันดึงข้อมูล (พิกัดแม่นยำตลาดอินทร์บุรี) ---
 
-# พิกัด ต.อินทร์บุรี
-INBURI_LAT = "15.0076"
-INBURI_LON = "100.3273"
+# 📍 พิกัด: ตลาดอินทร์บุรี (ใจกลางชุมชน)
+# Lat: 15.0108, Lon: 100.3314
+INBURI_LAT = "15.0108"
+INBURI_LON = "100.3314"
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key: return "ไม่มีข้อมูล"
+    # ดึงข้อมูลอากาศ ณ พิกัดตลาดอินทร์บุรี
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}&lang=th&units=metric"
     try:
         res = requests.get(url, timeout=30)
         data = res.json()
         if "weather" in data and len(data["weather"]) > 0:
             desc = data["weather"][0]["main"].lower()
-            if "rain" in desc: return "ฝนตก 🌧️"
-            if "cloud" in desc: return "เมฆเยอะ ☁️"
-            if "clear" in desc: return "ฟ้าโปร่ง ☀️"
-            return data["weather"][0]["description"]
+            temp = int(data["main"]["temp"]) # อุณหภูมิ
+            
+            weather_th = ""
+            if "rain" in desc: weather_th = "ฝนตก 🌧️"
+            elif "cloud" in desc: weather_th = "เมฆเยอะ ☁️"
+            elif "clear" in desc: weather_th = "ฟ้าโปร่ง ☀️"
+            elif "mist" in desc or "fog" in desc: weather_th = "หมอกลง 🌫️"
+            else: weather_th = data["weather"][0]["description"]
+            
+            return f"{weather_th} {temp}°C"
         return "ปกติ"
     except: return "ดึงข้อมูลไม่ได้"
 
 def get_pm25_data():
-    # 1. GISTDA (Priority 1)
+    """
+    ดึงค่า PM2.5:
+    Priority 1: OpenWeather (เพราะระบุพิกัดตลาดอินทร์บุรีได้แม่นยำกว่า)
+    Priority 2: GISTDA (สำรอง - เป็นค่าเฉลี่ยจังหวัดสิงห์บุรี)
+    """
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    
+    # 1. ลอง OpenWeather ก่อน (แม่นยำพิกัด)
+    if api_key:
+        print("Fetching Local Data (OpenWeather)...")
+        url_ow = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}"
+        try:
+            res = requests.get(url_ow, timeout=20)
+            pm25 = res.json()['list'][0]['components']['pm2_5']
+            print(f"Local PM2.5 Found: {pm25}")
+            return (f"{pm25:.1f}", analyze_air_quality(pm25))
+        except Exception as e:
+            print(f"OpenWeather Error: {e}")
+
+    # 2. ถ้า OpenWeather พลาด ค่อยใช้ GISTDA (เฉลี่ยจังหวัด)
+    print("Switching to GISTDA backup (Province Level)...")
     url_gistda = "https://pm25.gistda.or.th/rest/getPm25byProvince"
     try:
         res = requests.get(url_gistda, timeout=15, verify=False)
@@ -129,60 +158,52 @@ def get_pm25_data():
                 target_pm25 = province.get("pm25")
                 break
         if target_pm25 is not None:
-            print(f"GISTDA Data Found: {target_pm25}")
             return (f"{float(target_pm25):.1f}", analyze_air_quality(target_pm25))
     except Exception as e:
         print(f"GISTDA Error: {e}")
 
-    # 2. OpenWeather Backup (Priority 2)
-    print("Switching to OpenWeather backup...")
-    api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key: return ("-", analyze_air_quality(None))
-    
-    url_ow = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}"
-    try:
-        res = requests.get(url_ow, timeout=20)
-        pm25 = res.json()['list'][0]['components']['pm2_5']
-        return (f"{pm25:.1f}", analyze_air_quality(pm25))
-    except:
-        return ("-", analyze_air_quality(None))
+    return ("-", analyze_air_quality(None))
 
-# --- 4. สร้าง Caption (ตัดเรื่องน้ำออก) ---
+# --- 4. สร้าง Caption ---
 def generate_facebook_caption(weather, pm25_val, pm25_info) -> str:
     caption = []
     
-    # พาดหัวเน้นฝุ่น
+    # เวลาปัจจุบัน
+    current_time = datetime.now().strftime("%H:%M")
+    
+    # พาดหัว
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
          caption.append(f"🚨 เตือนภัยฝุ่น! {pm25_info['desc']}")
     else:
-         caption.append(f"📅 รายงานค่าฝุ่น PM2.5 อินทร์บุรี")
+         caption.append(f"📅 รายงานฝุ่น ตลาดอินทร์บุรี ({current_time} น.)")
 
     caption.append("-----------------------------")
     
-    # ข้อมูลฝุ่น (พระเอก)
+    # ข้อมูลฝุ่น
     if pm25_val != "-":
-        caption.append(f"😷 ค่าฝุ่น PM2.5 (ต.อินทร์บุรี): {pm25_val} μg/m³")
+        caption.append(f"😷 PM2.5 (ตลาดอินทร์บุรี): {pm25_val} μg/m³")
         caption.append(f"📊 สถานะ: {pm25_info['label']}")
-        caption.append(f"📉 เทียบเกณฑ์: {pm25_info['compare_text']}")
         caption.append(f"💡 คำแนะนำ: {pm25_info['advice']}")
     
     caption.append("") 
-    caption.append(f"☁️ สภาพอากาศ: {weather}")
+    caption.append(f"🌡️ สภาพอากาศ: {weather}")
     
-    # Hashtags (ตัดเรื่องน้ำออก)
-    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25", "#GISTDA", "#อากาศอินทร์บุรี"]
+    tags = ["#อินทร์บุรี", "#PM25", "#อากาศวันนี้", "#ตลาดอินทร์บุรี"]
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
-        tags.append("#ฝุ่นหนามากแม่")
-        tags.append("#ใส่แมสก์ด่วน")
+        tags.append("#ฝุ่นหนามาก")
+        tags.append("#ใส่แมสก์")
     
     return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-# --- 5. สร้างรูปภาพ (จัด Layout ใหม่เน้นฝุ่น) ---
+# --- 5. สร้างรูปภาพ ---
 def create_report_image(weather_status, pm25_data_tuple):
     IMAGE_WIDTH = 788
     IMAGE_HEIGHT = 763
     
     pm25_val, pm25_info = pm25_data_tuple
+    
+    # เวลาสำหรับใส่ในรูป
+    time_str = datetime.now().strftime("%H:%M น.")
 
     try:
         image = Image.open("background.png").convert("RGB")
@@ -192,52 +213,48 @@ def create_report_image(weather_status, pm25_data_tuple):
     draw = ImageDraw.Draw(image)
     
     try:
-        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 48) # ใหญ่ขึ้น
-        font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 40)
-        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 70) # ใหญ่สะใจ
+        font_weather = ImageFont.truetype("Sarabun-Bold.ttf", 55)
+        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 44)
+        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 75)
         font_label = ImageFont.truetype("Sarabun-Bold.ttf", 44)
+        font_small = ImageFont.truetype("Sarabun-Regular.ttf", 30)
     except:
-        font_main = font_sub = font_pm = font_label = ImageFont.load_default()
+        font_weather = font_main = font_pm = font_label = font_small = ImageFont.load_default()
 
     center_x = IMAGE_WIDTH // 2
-    
-    # จัดตำแหน่งใหม่ (ให้อยู่กึ่งกลางพื้นที่ว่าง เพราะไม่มีข้อมูลน้ำแล้ว)
-    y = 280 
+    y = 260 
     spacing = 80
 
-    # 1. สภาพอากาศ (อยู่บนสุด)
-    draw.text((center_x, y), f"สภาพอากาศ: {weather_status}", font=font_sub, fill="#333333", anchor="mm")
-    y += spacing + 10
+    # 1. สภาพอากาศ + อุณหภูมิ
+    draw.text((center_x, y), f"{weather_status}", font=font_weather, fill="#2c3e50", anchor="mm")
+    y += spacing + 15
 
     # 2. หัวข้อฝุ่น
-    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#444444", anchor="mm")
+    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (ตลาดอินทร์บุรี)", font=font_main, fill="#555555", anchor="mm")
     y += spacing + 10
     
-    # 3. ตัวเลขค่าฝุ่น (ใหญ่สุด)
+    # 3. ตัวเลขค่าฝุ่น
     draw.text((center_x, y), f"{pm25_val} μg/m³", font=font_pm, fill=pm25_info['color'], anchor="mm")
     y += spacing
     
     # 4. คำอธิบายสถานะ
     draw.text((center_x, y), pm25_info['label'], font=font_label, fill=pm25_info['color'], anchor="mm")
+    
+    # 5. เวลาอัปเดต (มุมขวาล่าง หรือตรงกลางล่างสุด)
+    draw.text((center_x, y + 60), f"อัปเดตข้อมูล: {time_str}", font=font_small, fill="#888888", anchor="mm")
 
     image.save("final_report.jpg", quality=95)
     
-    # สร้าง Caption (ส่งแค่ Weather กับ PM2.5)
     caption = generate_facebook_caption(weather_status, pm25_val, pm25_info)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(caption)
 
-    print(f"Done! Only PM2.5: {pm25_val} ({pm25_info['label']})")
+    print(f"Done! Weather: {weather_status}, PM2.5: {pm25_val}")
 
 if __name__ == "__main__":
     load_dotenv()
     
-    # ปิดการดึงข้อมูลน้ำชั่วคราวตามคำสั่ง
-    # dam = get_chao_phraya_dam_data()
-    # level = get_inburi_bridge_data()
-    
     weather = get_weather_status()
     pm25 = get_pm25_data()
     
-    # เรียกฟังก์ชันสร้างภาพแบบใหม่ (ไม่ต้องส่งค่าน้ำไป)
     create_report_image(weather, pm25)
