@@ -7,11 +7,14 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from requests_html import HTMLSession
+# Suppress InsecureRequestWarning
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # --- 1. คลังคำพูดแจ้งเตือน (Smart Messages) ---
 PM25_MESSAGES = {
     "very_good": [
-        {"label": "อากาศดีมาก (GISTDA) 💙", "desc": "ฟ้าใสปิ๊ง! สูดได้เต็มปอด", "advice": "เหมาะมากที่จะไปวิ่งออกกำลังกาย หรือตากผ้าครับ"},
+        {"label": "อากาศดีมาก 💙", "desc": "ฟ้าใสปิ๊ง! สูดได้เต็มปอด", "advice": "เหมาะมากที่จะไปวิ่งออกกำลังกาย หรือตากผ้าครับ"},
         {"label": "สดชื่นสุดๆ 🌬️", "desc": "ลมพัดเย็นสบาย ไร้ฝุ่นกวนใจ", "advice": "เปิดหน้าต่างรับลมได้เลย อากาศดีแบบนี้หายากนะ"},
         {"label": "พื้นที่สีฟ้า ✨", "desc": "ไม่มีฝุ่นเลย ปอดคุณยิ้มได้", "advice": "ใครดองงานซักผ้าไว้ รีบจัดเลยครับ แดดดีลมดี!"}
     ],
@@ -93,7 +96,7 @@ def analyze_air_quality(pm25_value):
         "color": color_code
     }
 
-# --- 3. ฟังก์ชันดึงข้อมูล (เปลี่ยนมาใช้ GISTDA เป็นหลัก) ---
+# --- 3. ฟังก์ชันดึงข้อมูล ---
 
 # พิกัด ต.อินทร์บุรี (สำหรับ Weather API)
 INBURI_LAT = "15.0076"
@@ -147,22 +150,15 @@ def get_weather_status():
         return "ปกติ"
     except: return "ดึงข้อมูลไม่ได้"
 
-# --- ✨ [ใหม่] ฟังก์ชันดึงค่าฝุ่นจาก GISTDA โดยตรง (แม่นยำที่สุด) ---
+# ฟังก์ชันดึงค่าฝุ่นจาก GISTDA
 def get_pm25_data():
-    """
-    ดึงข้อมูลจาก GISTDA (เช็คฝุ่น) ระดับจังหวัดสิงห์บุรี
-    เป็นข้อมูล Official ที่น่าเชื่อถือที่สุดสำหรับการแจ้งเตือนประชาชน
-    """
     # 1. ลองดึงจาก GISTDA ก่อน (Priority 1)
     url_gistda = "https://pm25.gistda.or.th/rest/getPm25byProvince"
     try:
-        # GISTDA API ไม่ต้องใช้ Key ใน Endpoint นี้ (Public Data)
-        res = requests.get(url_gistda, timeout=15, verify=False) # verify=False เพื่อเลี่ยงปัญหา SSL เก่า
+        res = requests.get(url_gistda, timeout=15, verify=False)
         data = res.json()
         
         target_pm25 = None
-        
-        # วนลูปหาจังหวัด "สิงห์บุรี"
         for province in data:
             if "สิงห์บุรี" in province.get("province_name_th", "") or "Sing Buri" in province.get("province_name_en", ""):
                 target_pm25 = province.get("pm25")
@@ -175,7 +171,7 @@ def get_pm25_data():
     except Exception as e:
         print(f"GISTDA Error: {e}")
 
-    # 2. ถ้า GISTDA ล่ม ให้ใช้ OpenWeather เป็นแผนสำรอง (Priority 2)
+    # 2. ถ้า GISTDA ล่ม ให้ใช้ OpenWeather Backup (Priority 2)
     print("Switching to OpenWeather backup...")
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key: return ("-", analyze_air_quality(None))
@@ -200,7 +196,8 @@ def generate_facebook_caption(water_level, discharge, weather, pm25_val, pm25_in
     caption.append("-----------------------------")
     
     if pm25_val != "-":
-        caption.append(f"😷 ค่าฝุ่น PM2.5 (GISTDA): {pm25_val} μg/m³")
+        # ใน Caption ยังคงบอกว่าอ้างอิง GISTDA เพื่อความน่าเชื่อถือของข้อมูล
+        caption.append(f"😷 ค่าฝุ่น PM2.5 (อ้างอิง GISTDA): {pm25_val} μg/m³")
         caption.append(f"📊 สถานะ: {pm25_info['label']}")
         caption.append(f"📉 เทียบเกณฑ์: {pm25_info['compare_text']}")
         caption.append(f"💡 คำแนะนำ: {pm25_info['advice']}")
@@ -222,7 +219,7 @@ def generate_facebook_caption(water_level, discharge, weather, pm25_val, pm25_in
     
     return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-# --- 5. สร้างรูปภาพ ---
+# --- 5. สร้างรูปภาพ (แก้ไขข้อความตามสั่ง) ---
 def create_report_image(dam_discharge, water_level, weather_status, pm25_data_tuple):
     IMAGE_WIDTH = 788
     IMAGE_HEIGHT = 763
@@ -257,7 +254,8 @@ def create_report_image(dam_discharge, water_level, weather_status, pm25_data_tu
     draw.text((center_x, y), f"ฟ้าฝน: {weather_status}", font=font_sub, fill="black", anchor="mm")
     y += spacing + 20 
 
-    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (อ้างอิง GISTDA)", font=font_main, fill="#555555", anchor="mm")
+    # --- [จุดที่แก้ไข] เปลี่ยนข้อความในรูปภาพ ---
+    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#555555", anchor="mm")
     y += spacing
     
     draw.text((center_x, y), f"{pm25_val} μg/m³", font=font_pm, fill=pm25_info['color'], anchor="mm")
