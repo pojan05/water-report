@@ -6,7 +6,6 @@ import random
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
-from requests_html import HTMLSession
 # Suppress InsecureRequestWarning
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -96,43 +95,11 @@ def analyze_air_quality(pm25_value):
         "color": color_code
     }
 
-# --- 3. ฟังก์ชันดึงข้อมูล ---
+# --- 3. ฟังก์ชันดึงข้อมูล (โฟกัสเฉพาะฝุ่นและอากาศ) ---
 
-# พิกัด ต.อินทร์บุรี (สำหรับ Weather API)
+# พิกัด ต.อินทร์บุรี
 INBURI_LAT = "15.0076"
 INBURI_LON = "100.3273"
-
-def get_chao_phraya_dam_data():
-    url = 'https://tiwrm.hii.or.th/DATA/REPORT/php/chart/chaopraya/small/chaopraya.php'
-    try:
-        res = requests.get(url, timeout=30)
-        res.raise_for_status()
-        match = re.search(r'var json_data = (\[.*\]);', res.text)
-        if not match: return "-"
-        json_string = match.group(1)
-        data = json.loads(json_string)
-        dam_discharge = data[0]['itc_water']['C13']['storage']
-        return str(int(float(dam_discharge.replace(",", "")))) if dam_discharge else "-"
-    except Exception:
-        return "-"
-
-def get_inburi_bridge_data() -> float | str:
-    url = "https://singburi.thaiwater.net/wl"
-    try:
-        session = HTMLSession()
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = session.get(url, headers=headers, timeout=30)
-        r.html.render(sleep=5, timeout=90, scrolldown=3)
-        soup = BeautifulSoup(r.html.html, "html.parser")
-        for row in soup.find_all("tr"):
-            if "อินทร์บุรี" in row.get_text():
-                tds = row.find_all("td")
-                if len(tds) >= 3:
-                    match = re.search(r"[0-9]+[\.,][0-9]+", tds[2].get_text(strip=True))
-                    if match: return float(match.group(0).replace(",", ""))
-        return "-"
-    except Exception:
-        return "-"
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
@@ -150,28 +117,24 @@ def get_weather_status():
         return "ปกติ"
     except: return "ดึงข้อมูลไม่ได้"
 
-# ฟังก์ชันดึงค่าฝุ่นจาก GISTDA
 def get_pm25_data():
-    # 1. ลองดึงจาก GISTDA ก่อน (Priority 1)
+    # 1. GISTDA (Priority 1)
     url_gistda = "https://pm25.gistda.or.th/rest/getPm25byProvince"
     try:
         res = requests.get(url_gistda, timeout=15, verify=False)
         data = res.json()
-        
         target_pm25 = None
         for province in data:
             if "สิงห์บุรี" in province.get("province_name_th", "") or "Sing Buri" in province.get("province_name_en", ""):
                 target_pm25 = province.get("pm25")
                 break
-        
         if target_pm25 is not None:
             print(f"GISTDA Data Found: {target_pm25}")
             return (f"{float(target_pm25):.1f}", analyze_air_quality(target_pm25))
-            
     except Exception as e:
         print(f"GISTDA Error: {e}")
 
-    # 2. ถ้า GISTDA ล่ม ให้ใช้ OpenWeather Backup (Priority 2)
+    # 2. OpenWeather Backup (Priority 2)
     print("Switching to OpenWeather backup...")
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key: return ("-", analyze_air_quality(None))
@@ -184,43 +147,38 @@ def get_pm25_data():
     except:
         return ("-", analyze_air_quality(None))
 
-# --- 4. สร้าง Caption ---
-def generate_facebook_caption(water_level, discharge, weather, pm25_val, pm25_info) -> str:
+# --- 4. สร้าง Caption (ตัดเรื่องน้ำออก) ---
+def generate_facebook_caption(weather, pm25_val, pm25_info) -> str:
     caption = []
     
+    # พาดหัวเน้นฝุ่น
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
-         caption.append(f"🚨 ด่วน! {pm25_info['desc']}")
+         caption.append(f"🚨 เตือนภัยฝุ่น! {pm25_info['desc']}")
     else:
-         caption.append(f"📅 รายงานอากาศ อินทร์บุรีบ้านเรา")
+         caption.append(f"📅 รายงานค่าฝุ่น PM2.5 อินทร์บุรี")
 
     caption.append("-----------------------------")
     
+    # ข้อมูลฝุ่น (พระเอก)
     if pm25_val != "-":
-        # ใน Caption ยังคงบอกว่าอ้างอิง GISTDA เพื่อความน่าเชื่อถือของข้อมูล
-        caption.append(f"😷 ค่าฝุ่น PM2.5 (อ้างอิง GISTDA): {pm25_val} μg/m³")
+        caption.append(f"😷 ค่าฝุ่น PM2.5 (ต.อินทร์บุรี): {pm25_val} μg/m³")
         caption.append(f"📊 สถานะ: {pm25_info['label']}")
         caption.append(f"📉 เทียบเกณฑ์: {pm25_info['compare_text']}")
         caption.append(f"💡 คำแนะนำ: {pm25_info['advice']}")
     
     caption.append("") 
+    caption.append(f"☁️ สภาพอากาศ: {weather}")
     
-    try:
-        lvl = f"{float(water_level):.2f}"
-    except: lvl = "รอตรวจสอบ"
-    
-    caption.append(f"🌊 ระดับน้ำ: {lvl} ม.")
-    caption.append(f"💧 เขื่อนปล่อย: {discharge} ลบ.ม./วิ")
-    caption.append(f"☁️ ฟ้าฝน: {weather}")
-    
-    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25", "#GISTDA"]
+    # Hashtags (ตัดเรื่องน้ำออก)
+    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25", "#GISTDA", "#อากาศอินทร์บุรี"]
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
         tags.append("#ฝุ่นหนามากแม่")
         tags.append("#ใส่แมสก์ด่วน")
     
     return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-# --- 5. สร้างรูปภาพ (แก้ไขข้อความตามสั่ง) ---
-def create_report_image(dam_discharge, water_level, weather_status, pm25_data_tuple):
+# --- 5. สร้างรูปภาพ (จัด Layout ใหม่เน้นฝุ่น) ---
+def create_report_image(weather_status, pm25_data_tuple):
     IMAGE_WIDTH = 788
     IMAGE_HEIGHT = 763
     
@@ -234,47 +192,52 @@ def create_report_image(dam_discharge, water_level, weather_status, pm25_data_tu
     draw = ImageDraw.Draw(image)
     
     try:
-        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 44)
-        font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 38)
-        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 55)
+        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 48) # ใหญ่ขึ้น
+        font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 40)
+        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 70) # ใหญ่สะใจ
+        font_label = ImageFont.truetype("Sarabun-Bold.ttf", 44)
     except:
-        font_main = font_sub = font_pm = ImageFont.load_default()
+        font_main = font_sub = font_pm = font_label = ImageFont.load_default()
 
     center_x = IMAGE_WIDTH // 2
-    y = 210
-    spacing = 65
+    
+    # จัดตำแหน่งใหม่ (ให้อยู่กึ่งกลางพื้นที่ว่าง เพราะไม่มีข้อมูลน้ำแล้ว)
+    y = 280 
+    spacing = 80
 
-    lvl_text = f"ระดับน้ำ: {water_level:.2f} ม." if isinstance(water_level, float) else "ระดับน้ำ: N/A"
-    draw.text((center_x, y), lvl_text, font=font_main, fill="black", anchor="mm")
-    y += spacing
-    
-    draw.text((center_x, y), f"ท้ายเขื่อนฯ: {dam_discharge} ลบ.ม./วิ", font=font_sub, fill="black", anchor="mm")
-    y += spacing
-    
-    draw.text((center_x, y), f"ฟ้าฝน: {weather_status}", font=font_sub, fill="black", anchor="mm")
-    y += spacing + 20 
+    # 1. สภาพอากาศ (อยู่บนสุด)
+    draw.text((center_x, y), f"สภาพอากาศ: {weather_status}", font=font_sub, fill="#333333", anchor="mm")
+    y += spacing + 10
 
-    # --- [จุดที่แก้ไข] เปลี่ยนข้อความในรูปภาพ ---
-    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#555555", anchor="mm")
-    y += spacing
+    # 2. หัวข้อฝุ่น
+    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#444444", anchor="mm")
+    y += spacing + 10
     
+    # 3. ตัวเลขค่าฝุ่น (ใหญ่สุด)
     draw.text((center_x, y), f"{pm25_val} μg/m³", font=font_pm, fill=pm25_info['color'], anchor="mm")
     y += spacing
     
-    draw.text((center_x, y), pm25_info['label'], font=font_sub, fill=pm25_info['color'], anchor="mm")
+    # 4. คำอธิบายสถานะ
+    draw.text((center_x, y), pm25_info['label'], font=font_label, fill=pm25_info['color'], anchor="mm")
 
     image.save("final_report.jpg", quality=95)
     
-    caption = generate_facebook_caption(water_level, dam_discharge, weather_status, pm25_val, pm25_info)
+    # สร้าง Caption (ส่งแค่ Weather กับ PM2.5)
+    caption = generate_facebook_caption(weather_status, pm25_val, pm25_info)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(caption)
 
-    print(f"Done! GISTDA PM2.5: {pm25_val} ({pm25_info['label']})")
+    print(f"Done! Only PM2.5: {pm25_val} ({pm25_info['label']})")
 
 if __name__ == "__main__":
     load_dotenv()
-    dam = get_chao_phraya_dam_data()
-    level = get_inburi_bridge_data()
+    
+    # ปิดการดึงข้อมูลน้ำชั่วคราวตามคำสั่ง
+    # dam = get_chao_phraya_dam_data()
+    # level = get_inburi_bridge_data()
+    
     weather = get_weather_status()
     pm25 = get_pm25_data()
-    create_report_image(dam, level, weather, pm25)
+    
+    # เรียกฟังก์ชันสร้างภาพแบบใหม่ (ไม่ต้องส่งค่าน้ำไป)
+    create_report_image(weather, pm25)
