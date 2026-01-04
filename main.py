@@ -163,7 +163,7 @@ def get_pm25_data():
     print(f"🏆 Selected: {best['source']} = {best['pm25']}")
     return (f"{best['pm25']:.1f}", analyze_air_quality(best['pm25']), best['station'])
 
-# --- 4. สร้าง Caption (ลบชื่อสถานีออก) ---
+# --- 4. สร้าง Caption (Clean) ---
 def generate_facebook_caption(weather, pm25_val, pm25_info, station_name) -> str:
     caption = []
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
@@ -174,7 +174,7 @@ def generate_facebook_caption(weather, pm25_val, pm25_info, station_name) -> str
     caption.append("-----------------------------")
     if pm25_val != "-":
         caption.append(f"😷 ค่าฝุ่น PM2.5: {pm25_val} μg/m³")
-        # ลบส่วนแสดง '📍 จุดวัด: ...' ออกตามคำขอ
+        # caption.append(f"📍 จุดวัด: {station_name}") # ปิดการแสดงจุดวัด
         caption.append(f"📊 สถานะ: {pm25_info['label']}")
         caption.append(f"📉 {pm25_info['compare_text']}")
         caption.append(f"💡 {pm25_info['advice']}")
@@ -186,7 +186,7 @@ def generate_facebook_caption(weather, pm25_val, pm25_info, station_name) -> str
     if pm25_info['level'] in ['unhealthy', 'hazardous']: tags.extend(["#ฝุ่นหนา", "#ดูแลสุขภาพ"])
     return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-# --- 5. สร้างรูปภาพ (Clean Layout) ---
+# --- 5. สร้างรูปภาพ (Adjust Spacing) ---
 def create_report_image(weather_status, pm25_data_result):
     IMAGE_WIDTH, IMAGE_HEIGHT = 788, 763
     
@@ -207,8 +207,9 @@ def create_report_image(weather_status, pm25_data_result):
 
     cx = IMAGE_WIDTH // 2
     
-    # --- ปรับ Layout ใหม่ให้ชิดกันพอดี ---
-    y = 280
+    # --- ปรับ Layout ใหม่ ---
+    # เริ่มต้นสูงขึ้นนิดนึง เพื่อให้มีที่เหลือด้านล่างเยอะขึ้น
+    y = 250 
 
     # 1. Weather
     draw.text((cx, y), f"สภาพอากาศ: {clean_text_for_image(weather_status)}", font=font_sub, fill="#333333", anchor="mm")
@@ -216,13 +217,15 @@ def create_report_image(weather_status, pm25_data_result):
 
     # 2. Title
     draw.text((cx, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#444444", anchor="mm")
-    y += 75
+    y += 80
 
     # 3. Value (ตัวเลขฝุ่น)
     draw.text((cx, y), f"{pm25_val} μg/m³", font=font_pm, fill=pm25_info['color'], anchor="mm")
-    y += 70
+    
+    # *** เพิ่มระยะห่างตรงนี้ให้เยอะขึ้น ***
+    y += 100  
 
-    # 4. Status Label (ไม่มีบรรทัด 'จาก: ...' แล้ว)
+    # 4. Status Label
     draw.text((cx, y), clean_text_for_image(pm25_info['label']), font=font_label, fill=pm25_info['color'], anchor="mm")
 
     image.save("final_report.jpg", quality=95)
