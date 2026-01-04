@@ -4,18 +4,22 @@ import requests
 import re
 import random
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
-# ปิดการแจ้งเตือน SSL สำหรับเว็บราชการบางเว็บที่ใบรับรองอาจเก่า
+# ปิดการแจ้งเตือน SSL สำหรับเว็บราชการ
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # --- 0. ตั้งค่าพิกัด (ต.อินทร์บุรี) ---
 INBURI_LAT = 15.0076
 INBURI_LON = 100.3273
+
+# ตั้งค่าการกรองข้อมูล
+MAX_DATA_AGE_SECONDS = 7200  # ข้อมูลต้องไม่เก่าเกิน 2 ชั่วโมง (เผื่อ Air4Thai ดีเลย์)
+MAX_DISTANCE_KM = 100        # ระยะทางค้นหาสูงสุด 100 กม.
 
 # --- 1. คลังคำพูดแจ้งเตือน (Smart Messages) ---
 PM25_MESSAGES = {
@@ -46,82 +50,64 @@ PM25_MESSAGES = {
     ]
 }
 
-# --- 2. ฟังก์ชันคำนวณระยะทาง (Haversine Formula) ---
+# --- 2. ฟังก์ชันช่วยต่างๆ ---
+
 def get_dist(lat1, lon1, lat2, lon2):
-    """คำนวณระยะทาง (km) ระหว่างสองพิกัดโลก"""
-    R = 6371  # รัศมีโลก (km)
+    """คำนวณระยะทาง (km) ด้วยสูตร Haversine"""
+    R = 6371
     dlat = math.radians(float(lat2) - float(lat1))
     dlon = math.radians(float(lon2) - float(lon1))
     a = math.sin(dlat/2)**2 + math.cos(math.radians(float(lat1))) * math.cos(math.radians(float(lat2))) * math.sin(dlon/2)**2
     c = 2 * math.asin(math.sqrt(a))
     return R * c
 
-# --- 3. ฟังก์ชันวิเคราะห์คุณภาพอากาศ ---
+def clean_text_for_image(text):
+    """ลบ Emoji ออกจากข้อความเพื่อป้องกันสี่เหลี่ยม [] ในรูปภาพ"""
+    emojis = ["🌧️", "☁️", "☀️", "💙", "🌬️", "✨", "💚", "✅", "😊", 
+              "💛", "🚧", "🌫️", "🧡", "😷", "🌪️", "❤️", "☠️", "🆘", 
+              "📅", "🚨", "📊", "📉", "💡", "👉", "🏆"]
+    cleaned = text
+    for icon in emojis:
+        cleaned = cleaned.replace(icon, "")
+    return cleaned.strip()
+
 def analyze_air_quality(pm25_value):
     try:
         val = float(pm25_value)
     except:
-        return {
-            "level": "Unsure",
-            "label": "ไม่มีข้อมูล",
-            "desc": "ระบบกำลังตรวจสอบ",
-            "advice": "รอสักครู่นะครับ",
-            "compare_text": "",
-            "color": "#808080"
-        }
+        return {"level": "Unsure", "label": "ไม่มีข้อมูล", "desc": "-", "advice": "-", "compare_text": "", "color": "#808080"}
 
-    selected_key = ""
-    color_code = ""
     STANDARD_VAL = 37.5 
-
-    if val <= 15:
-        selected_key = "very_good"
-        color_code = "#0099FF" 
-    elif val <= 25:
-        selected_key = "good"
-        color_code = "#00C853" 
-    elif val <= 37.5:
-        selected_key = "moderate"
-        color_code = "#FFAB00" 
-    elif val <= 75:
-        selected_key = "unhealthy"
-        color_code = "#FF6D00" 
-    else:
-        selected_key = "hazardous"
-        color_code = "#D50000" 
+    if val <= 15: key, color = "very_good", "#0099FF"
+    elif val <= 25: key, color = "good", "#00C853"
+    elif val <= 37.5: key, color = "moderate", "#FFAB00"
+    elif val <= 75: key, color = "unhealthy", "#FF6D00"
+    else: key, color = "hazardous", "#D50000"
 
     if val > STANDARD_VAL:
         times = val / STANDARD_VAL
-        if times >= 2:
-            compare_text = f"🚨 เกินเกณฑ์มาตรฐาน {times:.1f} เท่า! (อันตรายมาก)"
-        else:
-            diff = val - STANDARD_VAL
-            compare_text = f"⚠️ เกินเกณฑ์มาตรฐานมา {diff:.1f} หน่วย"
+        if times >= 2: compare = f"🚨 เกินเกณฑ์มาตรฐาน {times:.1f} เท่า! (อันตรายมาก)"
+        else: compare = f"⚠️ เกินเกณฑ์มาตรฐานมา {val - STANDARD_VAL:.1f} หน่วย"
     else:
         percent = (val / STANDARD_VAL) * 100
-        compare_text = f"✅ อยู่ในเกณฑ์ปลอดภัย ({int(percent)}% ของขีดจำกัด)"
+        compare = f"✅ อยู่ในเกณฑ์ปลอดภัย ({int(percent)}% ของขีดจำกัด)"
 
-    msg = random.choice(PM25_MESSAGES[selected_key])
-
+    msg = random.choice(PM25_MESSAGES[key])
     return {
-        "level": selected_key,
-        "label": msg['label'],
-        "desc": msg['desc'],
-        "advice": msg['advice'],
-        "compare_text": compare_text,
-        "color": color_code
+        "level": key, "label": msg['label'], "desc": msg['desc'], 
+        "advice": msg['advice'], "compare_text": compare, "color": color
     }
 
-# --- 4. ฟังก์ชันดึงข้อมูล (Smart Fallback Logic) ---
+# --- 3. ฟังก์ชันดึงข้อมูล (Logic หลัก) ---
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key: return "ไม่มีข้อมูล"
-    url = f"https://api.openweathermap.org/data/2.5/weather?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}&lang=th&units=metric"
     try:
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}&lang=th&units=metric"
         res = requests.get(url, timeout=30)
         data = res.json()
-        if "weather" in data and len(data["weather"]) > 0:
+        if "weather" in data:
             desc = data["weather"][0]["main"].lower()
             if "rain" in desc: return "ฝนตก 🌧️"
             if "cloud" in desc: return "เมฆเยอะ ☁️"
@@ -131,164 +117,198 @@ def get_weather_status():
     except: return "ดึงข้อมูลไม่ได้"
 
 def get_pm25_data():
-    print("🔄 กำลังดึงข้อมูลฝุ่น (Logic: Smart Fallback)...")
-
-    # --- Priority 1: DustBoy (แม่นยำสุด แต่ต้องสดใหม่) ---
-    url_dustboy = f"https://www.cmuccdc.org/api2/dustboy/near/{INBURI_LAT}/{INBURI_LON}"
+    print("🔄 กำลังดึงข้อมูลฝุ่น (Multi-Source Validation)...")
+    
+    all_sources = [] 
+    
+    # ----------------------------------------------------
+    # Priority 1: Air4Thai (ราชการ - น่าเชื่อถือสุด)
+    # ----------------------------------------------------
     try:
-        res = requests.get(url_dustboy, timeout=10, verify=False)
-        data = res.json()
-        
-        if data and len(data) > 0:
-            station = data[0]
-            pm25 = station.get('pm25')
-            epoch = station.get('dustboy_epoch', 0)
-            station_name = station.get('dustboy_name', 'Unknown')
-            
-            # เช็คความสด: ต้องไม่เก่าเกิน 2 ชม. (7200 วินาที)
-            if pm25 is not None and (datetime.now().timestamp() - int(epoch)) < 7200:
-                print(f"✅ DustBoy Found: {pm25} (Station: {station_name})")
-                return (f"{float(pm25):.1f}", analyze_air_quality(pm25))
-            else:
-                print(f"⚠️ DustBoy ข้อมูลเก่าเกินไป หรือไม่มีค่า (Last Update: {int(datetime.now().timestamp() - int(epoch))}s ago)")
-                
-    except Exception as e:
-        print(f"❌ DustBoy Error: {e}")
-
-    # --- Priority 2: Air4Thai (มาตรฐานราชการ เช็คระยะทาง) ---
-    try:
-        res = requests.get("http://air4thai.pcd.go.th/services/getNewAQI_JSON.php", timeout=10, verify=False)
-        stations = res.json()['stations']
-        
-        nearest = None
-        min_dist = 100  # จำกัดระยะค้นหาแค่ 100 km เกินนี้ไม่เอา
+        res = requests.get("http://air4thai.pcd.go.th/services/getNewAQI_JSON.php", timeout=15, verify=False)
+        stations = res.json().get('stations', [])
         
         for st in stations:
-            # ข้ามสถานีที่ค่าเป็น "-" หรือไม่มีค่า
-            if 'PM25' not in st['LastUpdate'] or st['LastUpdate']['PM25']['value'] == "-": 
-                continue
-            
-            dist = get_dist(INBURI_LAT, INBURI_LON, st['lat'], st['long'])
-            if dist < min_dist:
-                min_dist = dist
-                nearest = st
-        
-        if nearest:
-            pm25 = float(nearest['LastUpdate']['PM25']['value'])
-            name = nearest['nameTH']
-            print(f"✅ Air4Thai Found: {pm25} (Station: {name}, Dist: {min_dist:.1f}km)")
-            return (f"{pm25:.1f}", analyze_air_quality(pm25))
-        else:
-            print("⚠️ Air4Thai: ไม่พบสถานีที่มีข้อมูลในรัศมี 100km")
+            try:
+                if 'PM25' not in st['LastUpdate'] or st['LastUpdate']['PM25']['value'] == "-": continue
+                
+                # Check Distance
+                dist = get_dist(INBURI_LAT, INBURI_LON, st['lat'], st['long'])
+                if dist > MAX_DISTANCE_KM: continue
+                
+                # Check Age (Fix Timezone Issue)
+                update_str = st['LastUpdate']['date']
+                last_update = datetime.strptime(update_str, "%Y-%m-%d %H:%M:%S")
+                # แปลงเวลาปัจจุบัน (UTC) ให้เป็นเวลาไทย (UTC+7) เพื่อเทียบกับ Air4Thai
+                now_thai = datetime.utcnow() + timedelta(hours=7)
+                age_seconds = (now_thai - last_update).total_seconds()
+                
+                if age_seconds < 0: age_seconds = 0 # กันพลาดกรณีนาฬิกาไม่ตรง
+                if age_seconds > MAX_DATA_AGE_SECONDS: 
+                    # print(f"⚠️ Air4Thai Old: {st['nameTH']} ({int(age_seconds/60)} min)")
+                    continue
 
+                all_sources.append({
+                    'source': 'Air4Thai',
+                    'station': st['nameTH'],
+                    'pm25': float(st['LastUpdate']['PM25']['value']),
+                    'distance': dist,
+                    'age_seconds': age_seconds,
+                    'priority': 1
+                })
+            except: continue
     except Exception as e:
         print(f"❌ Air4Thai Error: {e}")
 
-    # --- Priority 3: OpenWeather (Fallback: กันตายด้วยข้อมูลดาวเทียม) ---
-    print("⚠️ Sensors offline/too far. Switching to OpenWeather backup...")
-    api_key = os.getenv("OPENWEATHER_API_KEY")
-    
-    if not api_key: 
-        return ("-", analyze_air_quality(None))
-    
-    url_ow = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}"
+    # ----------------------------------------------------
+    # Priority 2: DustBoy (เซนเซอร์ท้องถิ่น)
+    # ----------------------------------------------------
     try:
-        res = requests.get(url_ow, timeout=20)
-        pm25 = res.json()['list'][0]['components']['pm2_5']
-        print(f"✅ OpenWeather Found: {pm25}")
-        return (f"{pm25:.1f}", analyze_air_quality(pm25))
-    except Exception as e:
-        print(f"❌ OpenWeather Error: {e}")
-        return ("-", analyze_air_quality(None))
+        url_dustboy = f"https://www.cmuccdc.org/api2/dustboy/near/{INBURI_LAT}/{INBURI_LON}"
+        res = requests.get(url_dustboy, timeout=10, verify=False)
+        data = res.json()
+        
+        if data and isinstance(data, list):
+            for st in data[:5]: # เช็ค 5 สถานีใกล้สุด
+                try:
+                    pm25 = st.get('pm25')
+                    if pm25 is None: continue
+                    
+                    dist = get_dist(INBURI_LAT, INBURI_LON, st.get('dustboy_lat'), st.get('dustboy_lon'))
+                    if dist > MAX_DISTANCE_KM: continue
 
-# --- 5. สร้าง Caption ---
-def generate_facebook_caption(weather, pm25_val, pm25_info) -> str:
-    caption = []
+                    # Check Age (Timestamp is UTC based)
+                    epoch = int(st.get('dustboy_epoch', 0))
+                    age_seconds = datetime.now().timestamp() - epoch
+                    
+                    if age_seconds > MAX_DATA_AGE_SECONDS: continue
+                    
+                    all_sources.append({
+                        'source': 'DustBoy',
+                        'station': st.get('dustboy_name', 'Unknown'),
+                        'pm25': float(pm25),
+                        'distance': dist,
+                        'age_seconds': age_seconds,
+                        'priority': 2
+                    })
+                except: continue
+    except Exception as e:
+        print(f"❌ DustBoy Error: {e}")
+
+    # ----------------------------------------------------
+    # Priority 3: OpenWeather (Backup)
+    # ----------------------------------------------------
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if api_key:
+        try:
+            url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}"
+            res = requests.get(url, timeout=20)
+            pm25 = res.json()['list'][0]['components']['pm2_5']
+            all_sources.append({
+                'source': 'OpenWeather',
+                'station': 'Satellite',
+                'pm25': float(pm25),
+                'distance': 0,
+                'age_seconds': 0,
+                'priority': 3
+            })
+        except Exception as e:
+            print(f"❌ OpenWeather Error: {e}")
+
+    # ----------------------------------------------------
+    # Decision Making
+    # ----------------------------------------------------
+    if not all_sources:
+        return ("-", analyze_air_quality(None))
     
-    # พาดหัว
+    # Sort by: Priority (น้อยไปมาก) -> Distance (ใกล้ไปไกล) -> Age (ใหม่ไปเก่า)
+    all_sources.sort(key=lambda x: (x['priority'], x['distance'], x['age_seconds']))
+    
+    best = all_sources[0]
+    print(f"🏆 Selected: {best['source']} [{best['station']}] PM2.5={best['pm25']}")
+    
+    # ส่งกลับทั้งค่า PM2.5, ข้อมูลวิเคราะห์, และชื่อสถานี (เผื่อใช้)
+    return (f"{best['pm25']:.1f}", analyze_air_quality(best['pm25']), best['station'])
+
+# --- 4. สร้าง Caption ---
+
+def generate_facebook_caption(weather, pm25_val, pm25_info, station_name) -> str:
+    caption = []
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
          caption.append(f"🚨 เตือนภัยฝุ่น! {pm25_info['desc']}")
     else:
          caption.append(f"📅 รายงานค่าฝุ่น PM2.5 อินทร์บุรี")
 
     caption.append("-----------------------------")
-    
-    # ข้อมูลฝุ่น (พระเอก)
     if pm25_val != "-":
-        caption.append(f"😷 ค่าฝุ่น PM2.5 (ต.อินทร์บุรี): {pm25_val} μg/m³")
+        caption.append(f"😷 ค่าฝุ่น PM2.5: {pm25_val} μg/m³")
+        caption.append(f"📍 จุดวัด: {station_name}")
         caption.append(f"📊 สถานะ: {pm25_info['label']}")
-        caption.append(f"📉 เทียบเกณฑ์: {pm25_info['compare_text']}")
-        caption.append(f"💡 คำแนะนำ: {pm25_info['advice']}")
+        caption.append(f"📉 {pm25_info['compare_text']}")
+        caption.append(f"💡 {pm25_info['advice']}")
     
     caption.append("") 
     caption.append(f"☁️ สภาพอากาศ: {weather}")
     
-    # Hashtags
-    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25", "#อากาศอินทร์บุรี"]
-    if pm25_info['level'] in ['unhealthy', 'hazardous']:
-        tags.append("#ฝุ่นหนามากแม่")
-        tags.append("#ใส่แมสก์ด่วน")
-    
+    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25"]
+    if pm25_info['level'] in ['unhealthy', 'hazardous']: tags.extend(["#ฝุ่นหนา", "#ดูแลสุขภาพ"])
     return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-# --- 6. สร้างรูปภาพ ---
-def create_report_image(weather_status, pm25_data_tuple):
-    IMAGE_WIDTH = 788
-    IMAGE_HEIGHT = 763
-    
-    pm25_val, pm25_info = pm25_data_tuple
+# --- 5. สร้างรูปภาพ ---
 
-    try:
-        image = Image.open("background.png").convert("RGB")
-    except:
-        image = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), "#fff6db")
+def create_report_image(weather_status, pm25_data_result):
+    IMAGE_WIDTH, IMAGE_HEIGHT = 788, 763
+    
+    # Unpack ค่าที่ได้ (ตอนนี้มี 3 ค่า)
+    if len(pm25_data_result) == 3:
+        pm25_val, pm25_info, station_name = pm25_data_result
+    else:
+        pm25_val, pm25_info = pm25_data_result
+        station_name = "Unknown"
+
+    try: image = Image.open("background.png").convert("RGB")
+    except: image = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), "#fff6db")
     
     draw = ImageDraw.Draw(image)
-    
     try:
-        # พยายามโหลดฟอนต์ภาษาไทย
         font_main = ImageFont.truetype("Sarabun-Bold.ttf", 48)
         font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 40)
         font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 70)
-        font_label = ImageFont.truetype("Sarabun-Bold.ttf", 44)
+        font_label = ImageFont.truetype("Sarabun-Bold.ttf", 55)
+        font_small = ImageFont.truetype("Sarabun-Regular.ttf", 30)
     except:
-        # ถ้าไม่มีฟอนต์ ให้ใช้ default (อาจอ่านไทยไม่ออก)
-        font_main = font_sub = font_pm = font_label = ImageFont.load_default()
+        font_main = font_sub = font_pm = font_label = font_small = ImageFont.load_default()
 
-    center_x = IMAGE_WIDTH // 2
-    
-    # จัดตำแหน่งข้อความ
-    y = 280 
-    spacing = 80
+    cx, y, sp = IMAGE_WIDTH // 2, 280, 80
 
-    # 1. สภาพอากาศ (อยู่บนสุด)
-    draw.text((center_x, y), f"สภาพอากาศ: {weather_status}", font=font_sub, fill="#333333", anchor="mm")
-    y += spacing + 10
+    # 1. Weather (Clean)
+    draw.text((cx, y), f"สภาพอากาศ: {clean_text_for_image(weather_status)}", font=font_sub, fill="#333333", anchor="mm")
+    y += sp + 10
 
-    # 2. หัวข้อฝุ่น
-    draw.text((center_x, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#444444", anchor="mm")
-    y += spacing + 10
+    # 2. Title
+    draw.text((cx, y), "ค่าฝุ่น PM2.5 (ต.อินทร์บุรี)", font=font_main, fill="#444444", anchor="mm")
+    y += sp + 10
     
-    # 3. ตัวเลขค่าฝุ่น (ใหญ่สุด)
-    draw.text((center_x, y), f"{pm25_val} μg/m³", font=font_pm, fill=pm25_info['color'], anchor="mm")
-    y += spacing
+    # 3. Value
+    draw.text((cx, y), f"{pm25_val} μg/m³", font=font_pm, fill=pm25_info['color'], anchor="mm")
+    y += 50
     
-    # 4. คำอธิบายสถานะ
-    draw.text((center_x, y), pm25_info['label'], font=font_label, fill=pm25_info['color'], anchor="mm")
+    # เพิ่มชื่อสถานีเล็กๆ ใต้ตัวเลข (Clean text ด้วย)
+    clean_station = clean_text_for_image(station_name)
+    draw.text((cx, y), f"(จาก: {clean_station})", font=font_small, fill="#666666", anchor="mm")
+    y += sp - 20 # ขยับ space คืนนิดหน่อย
+    
+    # 4. Status (Clean)
+    draw.text((cx, y), clean_text_for_image(pm25_info['label']), font=font_label, fill=pm25_info['color'], anchor="mm")
 
     image.save("final_report.jpg", quality=95)
     
-    # สร้าง Caption และบันทึก
-    caption = generate_facebook_caption(weather_status, pm25_val, pm25_info)
-    with open("status.txt", "w", encoding="utf-8") as f:
-        f.write(caption)
+    # Caption (ใช้ Emoji ได้)
+    caption = generate_facebook_caption(weather_status, pm25_val, pm25_info, station_name)
+    with open("status.txt", "w", encoding="utf-8") as f: f.write(caption)
 
-    print(f"Done! Result PM2.5: {pm25_val} ({pm25_info['label']})")
+    print(f"Done! PM2.5: {pm25_val} from {station_name}")
 
 if __name__ == "__main__":
     load_dotenv()
-    
-    weather = get_weather_status()
-    pm25 = get_pm25_data()
-    
-    create_report_image(weather, pm25)
+    create_report_image(get_weather_status(), get_pm25_data())
