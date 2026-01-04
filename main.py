@@ -3,12 +3,19 @@ import json
 import requests
 import re
 import random
+import math
+from datetime import datetime
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
-# Suppress InsecureRequestWarning
+
+# ปิดการแจ้งเตือน SSL สำหรับเว็บราชการบางเว็บที่ใบรับรองอาจเก่า
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+# --- 0. ตั้งค่าพิกัด (ต.อินทร์บุรี) ---
+INBURI_LAT = 15.0076
+INBURI_LON = 100.3273
 
 # --- 1. คลังคำพูดแจ้งเตือน (Smart Messages) ---
 PM25_MESSAGES = {
@@ -39,7 +46,17 @@ PM25_MESSAGES = {
     ]
 }
 
-# --- 2. ฟังก์ชันวิเคราะห์คุณภาพอากาศ ---
+# --- 2. ฟังก์ชันคำนวณระยะทาง (Haversine Formula) ---
+def get_dist(lat1, lon1, lat2, lon2):
+    """คำนวณระยะทาง (km) ระหว่างสองพิกัดโลก"""
+    R = 6371  # รัศมีโลก (km)
+    dlat = math.radians(float(lat2) - float(lat1))
+    dlon = math.radians(float(lon2) - float(lon1))
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(float(lat1))) * math.cos(math.radians(float(lat2))) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return R * c
+
+# --- 3. ฟังก์ชันวิเคราะห์คุณภาพอากาศ ---
 def analyze_air_quality(pm25_value):
     try:
         val = float(pm25_value)
@@ -95,11 +112,7 @@ def analyze_air_quality(pm25_value):
         "color": color_code
     }
 
-# --- 3. ฟังก์ชันดึงข้อมูล (โฟกัสเฉพาะฝุ่นและอากาศ) ---
-
-# พิกัด ต.อินทร์บุรี
-INBURI_LAT = "15.0076"
-INBURI_LON = "100.3273"
+# --- 4. ฟังก์ชันดึงข้อมูล (Smart Fallback Logic) ---
 
 def get_weather_status():
     api_key = os.getenv("OPENWEATHER_API_KEY")
@@ -118,40 +131,81 @@ def get_weather_status():
     except: return "ดึงข้อมูลไม่ได้"
 
 def get_pm25_data():
-    # 1. GISTDA (Priority 1)
-    url_gistda = "https://pm25.gistda.or.th/rest/getPm25byProvince"
-    try:
-        res = requests.get(url_gistda, timeout=15, verify=False)
-        data = res.json()
-        target_pm25 = None
-        for province in data:
-            if "สิงห์บุรี" in province.get("province_name_th", "") or "Sing Buri" in province.get("province_name_en", ""):
-                target_pm25 = province.get("pm25")
-                break
-        if target_pm25 is not None:
-            print(f"GISTDA Data Found: {target_pm25}")
-            return (f"{float(target_pm25):.1f}", analyze_air_quality(target_pm25))
-    except Exception as e:
-        print(f"GISTDA Error: {e}")
+    print("🔄 กำลังดึงข้อมูลฝุ่น (Logic: Smart Fallback)...")
 
-    # 2. OpenWeather Backup (Priority 2)
-    print("Switching to OpenWeather backup...")
+    # --- Priority 1: DustBoy (แม่นยำสุด แต่ต้องสดใหม่) ---
+    url_dustboy = f"https://www.cmuccdc.org/api2/dustboy/near/{INBURI_LAT}/{INBURI_LON}"
+    try:
+        res = requests.get(url_dustboy, timeout=10, verify=False)
+        data = res.json()
+        
+        if data and len(data) > 0:
+            station = data[0]
+            pm25 = station.get('pm25')
+            epoch = station.get('dustboy_epoch', 0)
+            station_name = station.get('dustboy_name', 'Unknown')
+            
+            # เช็คความสด: ต้องไม่เก่าเกิน 2 ชม. (7200 วินาที)
+            if pm25 is not None and (datetime.now().timestamp() - int(epoch)) < 7200:
+                print(f"✅ DustBoy Found: {pm25} (Station: {station_name})")
+                return (f"{float(pm25):.1f}", analyze_air_quality(pm25))
+            else:
+                print(f"⚠️ DustBoy ข้อมูลเก่าเกินไป หรือไม่มีค่า (Last Update: {int(datetime.now().timestamp() - int(epoch))}s ago)")
+                
+    except Exception as e:
+        print(f"❌ DustBoy Error: {e}")
+
+    # --- Priority 2: Air4Thai (มาตรฐานราชการ เช็คระยะทาง) ---
+    try:
+        res = requests.get("http://air4thai.pcd.go.th/services/getNewAQI_JSON.php", timeout=10, verify=False)
+        stations = res.json()['stations']
+        
+        nearest = None
+        min_dist = 100  # จำกัดระยะค้นหาแค่ 100 km เกินนี้ไม่เอา
+        
+        for st in stations:
+            # ข้ามสถานีที่ค่าเป็น "-" หรือไม่มีค่า
+            if 'PM25' not in st['LastUpdate'] or st['LastUpdate']['PM25']['value'] == "-": 
+                continue
+            
+            dist = get_dist(INBURI_LAT, INBURI_LON, st['lat'], st['long'])
+            if dist < min_dist:
+                min_dist = dist
+                nearest = st
+        
+        if nearest:
+            pm25 = float(nearest['LastUpdate']['PM25']['value'])
+            name = nearest['nameTH']
+            print(f"✅ Air4Thai Found: {pm25} (Station: {name}, Dist: {min_dist:.1f}km)")
+            return (f"{pm25:.1f}", analyze_air_quality(pm25))
+        else:
+            print("⚠️ Air4Thai: ไม่พบสถานีที่มีข้อมูลในรัศมี 100km")
+
+    except Exception as e:
+        print(f"❌ Air4Thai Error: {e}")
+
+    # --- Priority 3: OpenWeather (Fallback: กันตายด้วยข้อมูลดาวเทียม) ---
+    print("⚠️ Sensors offline/too far. Switching to OpenWeather backup...")
     api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key: return ("-", analyze_air_quality(None))
+    
+    if not api_key: 
+        return ("-", analyze_air_quality(None))
     
     url_ow = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}"
     try:
         res = requests.get(url_ow, timeout=20)
         pm25 = res.json()['list'][0]['components']['pm2_5']
+        print(f"✅ OpenWeather Found: {pm25}")
         return (f"{pm25:.1f}", analyze_air_quality(pm25))
-    except:
+    except Exception as e:
+        print(f"❌ OpenWeather Error: {e}")
         return ("-", analyze_air_quality(None))
 
-# --- 4. สร้าง Caption (ตัดเรื่องน้ำออก) ---
+# --- 5. สร้าง Caption ---
 def generate_facebook_caption(weather, pm25_val, pm25_info) -> str:
     caption = []
     
-    # พาดหัวเน้นฝุ่น
+    # พาดหัว
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
          caption.append(f"🚨 เตือนภัยฝุ่น! {pm25_info['desc']}")
     else:
@@ -169,15 +223,15 @@ def generate_facebook_caption(weather, pm25_val, pm25_info) -> str:
     caption.append("") 
     caption.append(f"☁️ สภาพอากาศ: {weather}")
     
-    # Hashtags (ตัดเรื่องน้ำออก)
-    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25", "#GISTDA", "#อากาศอินทร์บุรี"]
+    # Hashtags
+    tags = ["#อินทร์บุรี", "#รายงานฝุ่น", "#PM25", "#อากาศอินทร์บุรี"]
     if pm25_info['level'] in ['unhealthy', 'hazardous']:
         tags.append("#ฝุ่นหนามากแม่")
         tags.append("#ใส่แมสก์ด่วน")
     
     return "\n".join(caption) + "\n\n" + " ".join(tags)
 
-# --- 5. สร้างรูปภาพ (จัด Layout ใหม่เน้นฝุ่น) ---
+# --- 6. สร้างรูปภาพ ---
 def create_report_image(weather_status, pm25_data_tuple):
     IMAGE_WIDTH = 788
     IMAGE_HEIGHT = 763
@@ -192,16 +246,18 @@ def create_report_image(weather_status, pm25_data_tuple):
     draw = ImageDraw.Draw(image)
     
     try:
-        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 48) # ใหญ่ขึ้น
+        # พยายามโหลดฟอนต์ภาษาไทย
+        font_main = ImageFont.truetype("Sarabun-Bold.ttf", 48)
         font_sub = ImageFont.truetype("Sarabun-Regular.ttf", 40)
-        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 70) # ใหญ่สะใจ
+        font_pm = ImageFont.truetype("Sarabun-Bold.ttf", 70)
         font_label = ImageFont.truetype("Sarabun-Bold.ttf", 44)
     except:
+        # ถ้าไม่มีฟอนต์ ให้ใช้ default (อาจอ่านไทยไม่ออก)
         font_main = font_sub = font_pm = font_label = ImageFont.load_default()
 
     center_x = IMAGE_WIDTH // 2
     
-    # จัดตำแหน่งใหม่ (ให้อยู่กึ่งกลางพื้นที่ว่าง เพราะไม่มีข้อมูลน้ำแล้ว)
+    # จัดตำแหน่งข้อความ
     y = 280 
     spacing = 80
 
@@ -222,22 +278,17 @@ def create_report_image(weather_status, pm25_data_tuple):
 
     image.save("final_report.jpg", quality=95)
     
-    # สร้าง Caption (ส่งแค่ Weather กับ PM2.5)
+    # สร้าง Caption และบันทึก
     caption = generate_facebook_caption(weather_status, pm25_val, pm25_info)
     with open("status.txt", "w", encoding="utf-8") as f:
         f.write(caption)
 
-    print(f"Done! Only PM2.5: {pm25_val} ({pm25_info['label']})")
+    print(f"Done! Result PM2.5: {pm25_val} ({pm25_info['label']})")
 
 if __name__ == "__main__":
     load_dotenv()
     
-    # ปิดการดึงข้อมูลน้ำชั่วคราวตามคำสั่ง
-    # dam = get_chao_phraya_dam_data()
-    # level = get_inburi_bridge_data()
-    
     weather = get_weather_status()
     pm25 = get_pm25_data()
     
-    # เรียกฟังก์ชันสร้างภาพแบบใหม่ (ไม่ต้องส่งค่าน้ำไป)
     create_report_image(weather, pm25)
