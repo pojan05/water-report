@@ -101,18 +101,20 @@ def analyze_air_quality(pm25_value):
 # 📡 ส่วนดึงข้อมูล (Data Fetching)
 # ==========================================
 def get_weather_status():
-    api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key: return "ไม่มีข้อมูล"
+    # ใช้ OpenMeteo แทน OpenWeather เพื่อลดการพึ่งพา API Key และได้ข้อมูลฟรี
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?lat={INBURI_LAT}&lon={INBURI_LON}&appid={api_key}&lang=th&units=metric"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={INBURI_LAT}&longitude={INBURI_LON}&current=weather_code&timezone=Asia%2FBangkok"
         res = requests.get(url, timeout=30)
         data = res.json()
-        if "weather" in data:
-            desc = data["weather"][0]["main"].lower()
-            if "rain" in desc: return "ฝนตก 🌧️"
-            if "cloud" in desc: return "เมฆเยอะ ☁️"
-            if "clear" in desc: return "ฟ้าโปร่ง ☀️"
-            return data["weather"][0]["description"]
+        if "current" in data:
+            code = data["current"]["weather_code"]
+            # แปลง Weather Code เป็นคำอธิบาย
+            if code == 0: return "ฟ้าโปร่ง ☀️"
+            if 1 <= code <= 3: return "เมฆบางส่วน ☁️"
+            if 45 <= code <= 48: return "หมอกลง 🌫️"
+            if 51 <= code <= 67: return "ฝนตก 🌧️"
+            if code >= 80: return "ฝนฟ้าคะนอง ⛈️"
+            return "ปกติ"
         return "ปกติ"
     except: return "-"
 
@@ -124,30 +126,45 @@ def get_pm25_data():
     # --- 0. GISTDA (CheckFun) ---
     try:
         print("   > ตรวจสอบ GISTDA...")
-        # เพิ่ม parameter 't' (Timestamp) เพื่อป้องกัน Caching (บังคับให้ดึงข้อมูลใหม่เสมอ)
         current_ts = int(time.time())
         url_gistda = f"https://pm25.gistda.or.th/rest/getPM25byLocation?lat={INBURI_LAT}&lng={INBURI_LON}&t={current_ts}"
         
         res = requests.get(url_gistda, headers=headers, timeout=15, verify=False)
         
         if res.status_code == 200:
-            data = res.json()
+            raw_data = res.json()
+            # *** FIX: จัดการ Nested JSON (data ซ้อน data) ***
+            # ถ้ามี key 'data' ให้เข้าไปข้างใน ถ้าไม่มีให้ใช้ตัวนอกเลย
+            data = raw_data.get('data', raw_data)
+
             if 'pm25' in data and data['pm25'] is not None:
                  val = float(data['pm25'])
                  
-                 # ตรวจสอบความสดใหม่ของข้อมูล (ถ้ามี field date)
+                 # ตรวจสอบความสดใหม่
                  data_age = 0
-                 if 'date' in data:
+                 # เช็คเวลาจาก datetimeEng (ถ้ามี)
+                 if 'datetimeEng' in data and 'timeEng' in data['datetimeEng']:
                      try:
-                         # รูปแบบเวลาของ GISTDA เช่น "2024-01-05 10:00:00"
-                         data_time = datetime.strptime(data['date'], "%Y-%m-%d %H:%M:%S")
-                         # คำนวณอายุข้อมูล
-                         data_age = (datetime.now() - data_time).total_seconds()
-                         print(f"     🕒 เวลาของข้อมูล GISTDA: {data['date']} (เก่าไป {int(data_age/60)} นาที)")
-                     except:
-                         print("     ⚠️ ไม่สามารถอ่านเวลาจาก GISTDA ได้ แต่จะพยายามใช้ค่าฝุ่น")
+                         # timeEng format: "11:00"
+                         time_str = data['datetimeEng']['timeEng']
+                         now = datetime.now()
+                         data_time = datetime.strptime(time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+                         
+                         # ถ้าเวลาที่ได้มาล้ำหน้าปัจจุบัน แสดงว่าเป็นของเมื่อวาน (หรือข้ามวัน)
+                         if data_time > now:
+                             data_time = data_time - timedelta(days=1)
+                             
+                         data_age = (now - data_time).total_seconds()
+                         print(f"     🕒 เวลาของข้อมูล GISTDA: {time_str} (เก่าไป {int(data_age/60)} นาที)")
+                     except Exception as e:
+                         print(f"     ⚠️ Parse Time Error: {e}")
                  
-                 # ถ้าข้อมูลเก่าเกิน 4 ชั่วโมง (14400 วินาที) ให้ข้าม
+                 elif 'date' in data: # Fallback กรณีมี key date เดิม
+                     try:
+                         data_time = datetime.strptime(data['date'], "%Y-%m-%d %H:%M:%S")
+                         data_age = (datetime.now() - data_time).total_seconds()
+                     except: pass
+                 
                  if data_age <= MAX_DATA_AGE_SECONDS:
                      all_sources.append({'source': 'GISTDA (CheckFun)', 'station': 'Inburi (GISTDA)', 'pm25': val, 'distance': 0, 'age': data_age, 'priority': 0})
                      print(f"     ✅ GISTDA ใช้ได้: {val}")
@@ -220,7 +237,7 @@ def generate_facebook_caption(weather, pm25_val, pm25_info, station_name) -> str
     caption.append("-----------------------------")
     if pm25_val != "-":
         caption.append(f"😷 ค่าฝุ่น PM2.5: {pm25_val} μg/m³")
-        # caption.append(f"📍 จุดวัด: {station_name}") # ปิดชื่อสถานีตามต้องการ
+        # caption.append(f"📍 จุดวัด: {station_name}") # เปิด/ปิด ตามต้องการ
         caption.append(f"📊 สถานะ: {pm25_info['label']}")
         caption.append(f"📉 {pm25_info['compare_text']}")
         caption.append(f"💡 {pm25_info['advice']}")
