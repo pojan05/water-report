@@ -5,7 +5,7 @@ import re
 import random
 import math
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
@@ -18,7 +18,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 # ==========================================
 INBURI_LAT = 15.0076
 INBURI_LON = 100.3273
-MAX_DATA_AGE_SECONDS = 14400 # 4 ชั่วโมง (ถ้าข้อมูลเก่ากว่านี้ จะไม่เอา)
+MAX_DATA_AGE_SECONDS = 21600 # 6 ชั่วโมง (เผื่อเวลา Server เหลื่อมล้ำ)
 MAX_DISTANCE_KM = 150        # รัศมีค้นหา 150 กม.
 
 # ==========================================
@@ -101,14 +101,13 @@ def analyze_air_quality(pm25_value):
 # 📡 ส่วนดึงข้อมูล (Data Fetching)
 # ==========================================
 def get_weather_status():
-    # ใช้ OpenMeteo แทน OpenWeather เพื่อลดการพึ่งพา API Key และได้ข้อมูลฟรี
     try:
+        # ใช้ OpenMeteo (ฟรี ไม่ต้องใช้ Key)
         url = f"https://api.open-meteo.com/v1/forecast?latitude={INBURI_LAT}&longitude={INBURI_LON}&current=weather_code&timezone=Asia%2FBangkok"
         res = requests.get(url, timeout=30)
         data = res.json()
         if "current" in data:
             code = data["current"]["weather_code"]
-            # แปลง Weather Code เป็นคำอธิบาย
             if code == 0: return "ฟ้าโปร่ง ☀️"
             if 1 <= code <= 3: return "เมฆบางส่วน ☁️"
             if 45 <= code <= 48: return "หมอกลง 🌫️"
@@ -119,52 +118,55 @@ def get_weather_status():
     except: return "-"
 
 def get_pm25_data():
-    print("🔄 กำลังดึงข้อมูลฝุ่น (Check Freshness)...")
+    print("🔄 กำลังดึงข้อมูลฝุ่น (Checking Real-time)...")
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     all_sources = [] 
     
-    # --- 0. GISTDA (CheckFun) ---
+    # ------------------------------------------------------------------
+    # 1. GISTDA (Priority 0) - แหล่งข้อมูลหลัก
+    # ------------------------------------------------------------------
     try:
         print("   > ตรวจสอบ GISTDA...")
         current_ts = int(time.time())
+        # เพิ่ม t=timestamp เพื่อป้องกัน Cache
         url_gistda = f"https://pm25.gistda.or.th/rest/getPM25byLocation?lat={INBURI_LAT}&lng={INBURI_LON}&t={current_ts}"
         
         res = requests.get(url_gistda, headers=headers, timeout=15, verify=False)
         
         if res.status_code == 200:
             raw_data = res.json()
-            # *** FIX: จัดการ Nested JSON (data ซ้อน data) ***
-            # ถ้ามี key 'data' ให้เข้าไปข้างใน ถ้าไม่มีให้ใช้ตัวนอกเลย
+            # *** FIX NESTED JSON: ถ้ามี data ซ้อน data ให้เจาะเข้าไป ***
             data = raw_data.get('data', raw_data)
 
             if 'pm25' in data and data['pm25'] is not None:
                  val = float(data['pm25'])
                  
-                 # ตรวจสอบความสดใหม่
+                 # *** FIX TIMEZONE: ใช้เวลาไทย (GMT+7) เสมอ ***
                  data_age = 0
-                 # เช็คเวลาจาก datetimeEng (ถ้ามี)
+                 tz_bkk = timezone(timedelta(hours=7))
+                 now_bkk = datetime.now(tz_bkk)
+
                  if 'datetimeEng' in data and 'timeEng' in data['datetimeEng']:
                      try:
-                         # timeEng format: "11:00"
+                         # GISTDA ส่งมาแค่ "HH:MM" ต้องเอามาผสมกับวันที่ปัจจุบัน
                          time_str = data['datetimeEng']['timeEng']
-                         now = datetime.now()
-                         data_time = datetime.strptime(time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
                          
-                         # ถ้าเวลาที่ได้มาล้ำหน้าปัจจุบัน แสดงว่าเป็นของเมื่อวาน (หรือข้ามวัน)
-                         if data_time > now:
+                         data_time = datetime.strptime(time_str, "%H:%M").replace(
+                             year=now_bkk.year, month=now_bkk.month, day=now_bkk.day, 
+                             tzinfo=tz_bkk
+                         )
+                         
+                         # ถ้าเวลาข้อมูล ล้ำหน้าเวลาปัจจุบัน (เช่น ตอนนี้ 10:00 แต่ข้อมูลมา 11:00) 
+                         # แสดงว่าเป็นข้อมูลของเมื่อวาน (ข้ามวัน)
+                         if data_time > now_bkk:
                              data_time = data_time - timedelta(days=1)
                              
-                         data_age = (now - data_time).total_seconds()
-                         print(f"     🕒 เวลาของข้อมูล GISTDA: {time_str} (เก่าไป {int(data_age/60)} นาที)")
+                         data_age = (now_bkk - data_time).total_seconds()
+                         print(f"     🕒 GISTDA Time: {time_str} (Age: {int(data_age/60)} min)")
                      except Exception as e:
-                         print(f"     ⚠️ Parse Time Error: {e}")
-                 
-                 elif 'date' in data: # Fallback กรณีมี key date เดิม
-                     try:
-                         data_time = datetime.strptime(data['date'], "%Y-%m-%d %H:%M:%S")
-                         data_age = (datetime.now() - data_time).total_seconds()
-                     except: pass
-                 
+                         print(f"     ⚠️ Parse Time Error: {e} (ใช้ค่าฝุ่นเลย)")
+
+                 # ถ้าข้อมูลไม่เก่าเกิน 6 ชม. ให้เอาเลย
                  if data_age <= MAX_DATA_AGE_SECONDS:
                      all_sources.append({'source': 'GISTDA (CheckFun)', 'station': 'Inburi (GISTDA)', 'pm25': val, 'distance': 0, 'age': data_age, 'priority': 0})
                      print(f"     ✅ GISTDA ใช้ได้: {val}")
@@ -174,7 +176,9 @@ def get_pm25_data():
     except Exception as e: 
         print(f"     ❌ GISTDA Error: {e}")
 
-    # --- 1. Air4Thai ---
+    # ------------------------------------------------------------------
+    # 2. Air4Thai (Priority 1)
+    # ------------------------------------------------------------------
     try:
         res = requests.get(f"http://air4thai.pcd.go.th/services/getNewAQI_JSON.php?t={int(time.time())}", headers=headers, timeout=15, verify=False)
         if res.status_code == 200:
@@ -183,29 +187,18 @@ def get_pm25_data():
                 dist = get_dist(INBURI_LAT, INBURI_LON, st['lat'], st['long'])
                 if dist > MAX_DISTANCE_KM: continue
                 
+                # Air4Thai ส่งเวลามาเป็น Local Time
                 last_update = datetime.strptime(st['LastUpdate']['date'], "%Y-%m-%d %H:%M:%S")
+                # แปลงเป็น UTC เพื่อเทียบกับ utcnow หรือใช้ logic ง่ายๆ
                 age = (datetime.utcnow() + timedelta(hours=7) - last_update).total_seconds()
-                if age > MAX_DATA_AGE_SECONDS: continue
-
-                all_sources.append({'source': 'Air4Thai', 'station': st['nameTH'], 'pm25': float(st['LastUpdate']['PM25']['value']), 'distance': dist, 'age': age, 'priority': 1})
+                
+                if age <= MAX_DATA_AGE_SECONDS:
+                    all_sources.append({'source': 'Air4Thai', 'station': st['nameTH'], 'pm25': float(st['LastUpdate']['PM25']['value']), 'distance': dist, 'age': age, 'priority': 1})
     except Exception as e: print(f"❌ Air4Thai Error: {e}")
 
-    # --- 2. DustBoy ---
-    try:
-        url = f"https://www.cmuccdc.org/api2/dustboy/near/{INBURI_LAT}/{INBURI_LON}"
-        res = requests.get(url, headers=headers, timeout=10, verify=False)
-        data = res.json()
-        if data and isinstance(data, list):
-            for st in data[:5]:
-                if not st.get('pm25') or not st.get('dustboy_lat'): continue
-                dist = get_dist(INBURI_LAT, INBURI_LON, st.get('dustboy_lat'), st.get('dustboy_lon'))
-                if dist > MAX_DISTANCE_KM: continue
-                age = datetime.now().timestamp() - int(st.get('dustboy_epoch', 0))
-                if age > MAX_DATA_AGE_SECONDS: continue
-                all_sources.append({'source': 'DustBoy', 'station': st.get('dustboy_name'), 'pm25': float(st.get('pm25')), 'distance': dist, 'age': age, 'priority': 2})
-    except Exception as e: print(f"❌ DustBoy Error: {e}")
-
-    # --- 3. OpenMeteo (Backup) ---
+    # ------------------------------------------------------------------
+    # 3. OpenMeteo (Backup - Priority 3)
+    # ------------------------------------------------------------------
     try:
         url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={INBURI_LAT}&longitude={INBURI_LON}&current=pm2_5&timezone=Asia%2FBangkok"
         res = requests.get(url, headers=headers, timeout=10)
@@ -213,15 +206,15 @@ def get_pm25_data():
         if 'current' in data:
             pm25 = data['current']['pm2_5']
             all_sources.append({'source': 'OpenMeteo', 'station': 'Model Forecast', 'pm25': float(pm25), 'distance': 0, 'age': 0, 'priority': 3})
-            print(f"✅ OpenMeteo Found: {pm25}")
+            # print(f"✅ OpenMeteo Found: {pm25}") # ไม่ต้องโชว์ถ้ามีตัวอื่น
     except Exception as e: print(f"❌ OpenMeteo Error: {e}")
 
     if not all_sources: return ("-", analyze_air_quality(None), "-")
     
-    # เรียงลำดับความสำคัญ: Priority > Distance > Age
+    # Sort: Priority (น้อยไปหามาก) > Distance > Age
     all_sources.sort(key=lambda x: (x['priority'], x['distance'], x['age']))
     best = all_sources[0]
-    print(f"🏆 Selected Source: {best['source']} = {best['pm25']} (Age: {int(best['age']/60)} min)")
+    print(f"🏆 Selected Source: {best['source']} = {best['pm25']}")
     return (f"{best['pm25']:.1f}", analyze_air_quality(best['pm25']), best['station'])
 
 # ==========================================
